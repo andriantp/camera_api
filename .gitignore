@@ -28,8 +28,8 @@ docs
 /docker/docker-compose.yml
 
 app
-pkg
-Makefile
+pkg/adapter
 
+Makefile
 go.*
 main.go

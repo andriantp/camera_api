@@ -1,7 +1,7 @@
 package helper
 
 import (
-	"camera_api/pkg/utils/response"
+	"camera_api/pkg/api/response"
 	"net/http"
 	"time"
 )
