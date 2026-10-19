@@ -1,0 +1,37 @@
+services:
+  camera_api:
+    image: camera_api:v.1.0
+
+    container_name: camera_api
+
+    build:
+      context: ./../
+      dockerfile: ./docker/Dockerfile
+
+    restart: unless-stopped
+
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+    ports:
+      - "8085:8085"
+      # - "HOST:CONTAINER"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    environment:
+      PRODUCT: camera
+      ENV: ${ENV}
+      FILE: ${FILE}
+      HOST: ${HOST}
+      TOKEN: ${TOKEN}
+
+    networks:
+      - camera_network
+
+networks:
+  camera_network:
+    external: true
