@@ -18,18 +18,13 @@ coverage.html
 
 # Logs
 *.log
+
+## Swagger
 docs
 
 # Database
 /postgres
 
 # Docker
-/docker
 /docker/docker-compose.yml
 
-app
-pkg/adapter
-
-Makefile
-go.*
-main.go
