@@ -350,7 +350,7 @@ func (u *usecase) UpdateConfiguration(ctx context.Context, actor request.UserAct
 			msg = fmt.Sprintf(
 				"Updated profile for camera %s to %s",
 				cameraUUID,
-				req.Profile,
+				*req.Profile,
 			)
 
 		case "channel":
