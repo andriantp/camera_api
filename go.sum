@@ -1,7 +1,7 @@
 github.com/KyleBanks/depth v1.2.1 h1:5h8fQADFrWtarTdtDudMmGsC7GPbOAu6RVB3ffsVFHc=
 github.com/KyleBanks/depth v1.2.1/go.mod h1:jzSb9d0L43HxTQfT+oSA1EEp2q+ne2uh6XgeJcm8brE=
-github.com/andriantp/camera v1.0.6 h1:hQW2yXyii/gA5tKTbaakDvtXv+uoPEUbTAPfvgSm2jo=
-github.com/andriantp/camera v1.0.6/go.mod h1:dPjAI3rERsGfnBpHO+Rp/yFOzmemccJWZD43twa/Snk=
+github.com/andriantp/camera v1.0.7 h1:PbQaG5mau9Ncg99W0DTOR1tt+GfSdVklUAUsnI2ilGw=
+github.com/andriantp/camera v1.0.7/go.mod h1:PlvFxMDQaC9FlusMATEVln26AWKuN06UhlbGI+EmbJI=
 github.com/andriantp/go-braille v0.1.1 h1:U2bRTPIiZvuA6FJRvyYTxsp7Oqd1i9VREf5znQTq1To=
 github.com/andriantp/go-braille v0.1.1/go.mod h1:bYsSIBecUFcGo297/MxAfdBsT5TVhKEO7bfrVKRxdGM=
 github.com/beevik/etree v1.1.0 h1:T0xke/WvNtMoCqgzPhkX2r4rjY3GDZFi+FjpRZY2Jbs=

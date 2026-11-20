@@ -3,7 +3,7 @@ module camera_api
 go 1.25.0
 
 require (
-	github.com/andriantp/camera v1.0.6
+	github.com/andriantp/camera v1.0.7
 	github.com/andriantp/go-braille v0.1.1
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/golang-jwt/jwt/v5 v5.3.1
