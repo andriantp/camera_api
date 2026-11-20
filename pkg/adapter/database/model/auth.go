@@ -24,6 +24,7 @@ type User struct {
 	Password    string         `gorm:"type:text;not null"`
 	Active      bool           `gorm:"not null;default:true"`
 	LoginFailed int            `gorm:"not null;default:0"`
+	LockedUntil *time.Time     `gorm:"type:timestamp(0)"`
 	LastLoginAt *time.Time     `gorm:"type:timestamp(0)"`
 	CreatedAt   time.Time      `gorm:"type:timestamp(0)"`
 	UpdatedAt   time.Time      `gorm:"type:timestamp(0)"`

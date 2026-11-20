@@ -130,8 +130,8 @@ type fakeStatusRepo struct {
 
 	target *model.User
 
-	loginFailed []int
-	revokes     int
+	resets  int
+	revokes int
 }
 
 func (f *fakeStatusRepo) FindRoleByName(context.Context, string) (*model.Role, error) {
@@ -153,8 +153,8 @@ func (f *fakeStatusRepo) DoTransaction(ctx context.Context, fn func(context.Cont
 
 func (f *fakeStatusRepo) UpdateStatus(context.Context, string, bool) error { return nil }
 
-func (f *fakeStatusRepo) UpdateLoginFailed(_ context.Context, _ string, n int) error {
-	f.loginFailed = append(f.loginFailed, n)
+func (f *fakeStatusRepo) ResetLoginFailures(context.Context, string) error {
+	f.resets++
 	return nil
 }
 
@@ -202,9 +202,8 @@ func TestUpdateUserStatusResetsLoginFailedOnReactivation(t *testing.T) {
 				t.Fatalf("UpdateUserStatus: %v", err)
 			}
 
-			reset := len(repo.loginFailed) == 1 && repo.loginFailed[0] == 0
-			if reset != tt.wantReset {
-				t.Errorf("login_failed updates = %v, want reset=%v", repo.loginFailed, tt.wantReset)
+			if reset := repo.resets == 1; reset != tt.wantReset {
+				t.Errorf("login failure resets = %d, want reset=%v", repo.resets, tt.wantReset)
 			}
 
 			if repo.revokes != tt.wantRevokes {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,17 +26,16 @@ type fakeLoginRepo struct {
 
 	user *model.UserSession
 
-	// alreadyInactive simulates a concurrent request that deactivated the
-	// user first.
-	alreadyInactive bool
+	// alreadyLocked simulates a concurrent request that locked the user first.
+	alreadyLocked bool
 
-	transactions  int
-	loginFailed   []int
-	increments    int
-	deactivations int
-	revokes       int
-	activities    []string
-	sessions      int
+	transactions int
+	resets       int
+	increments   int
+	locks        []time.Time
+	revokes      int
+	activities   []string
+	sessions     int
 }
 
 func (f *fakeLoginRepo) FindUserByUserName(context.Context, string) (*model.UserSession, error) {
@@ -52,8 +52,8 @@ func (f *fakeLoginRepo) DoTransaction(ctx context.Context, fn func(context.Conte
 	return fn(ctx, nil)
 }
 
-func (f *fakeLoginRepo) UpdateLoginFailed(_ context.Context, _ string, n int) error {
-	f.loginFailed = append(f.loginFailed, n)
+func (f *fakeLoginRepo) ResetLoginFailures(context.Context, string) error {
+	f.resets++
 	return nil
 }
 
@@ -62,12 +62,12 @@ func (f *fakeLoginRepo) IncrementLoginFailed(context.Context, string) (int, erro
 	return f.user.LoginFailed + f.increments, nil
 }
 
-func (f *fakeLoginRepo) DeactivateIfActive(context.Context, string) (bool, error) {
-	if f.alreadyInactive {
+func (f *fakeLoginRepo) LockUser(_ context.Context, _ string, until, _ time.Time) (bool, error) {
+	if f.alreadyLocked {
 		return false, nil
 	}
 
-	f.deactivations++
+	f.locks = append(f.locks, until)
 	return true, nil
 }
 
@@ -176,12 +176,8 @@ func TestLoginWrongPasswordCountsFailure(t *testing.T) {
 		t.Fatalf("login_failed increments = %d, want 1", repo.increments)
 	}
 
-	if len(repo.loginFailed) != 0 {
-		t.Fatalf("login_failed must be incremented atomically, not overwritten: %v", repo.loginFailed)
-	}
-
-	if repo.deactivations != 0 {
-		t.Fatal("account must not be deactivated yet")
+	if len(repo.locks) != 0 {
+		t.Fatal("account must not be locked yet")
 	}
 }
 
@@ -189,19 +185,75 @@ func TestLoginLockoutUsesGenericResponse(t *testing.T) {
 	fakeBcrypt(t)
 	repo := &fakeLoginRepo{user: newLoginUser(true, 3)}
 
+	before := time.Now().UTC()
 	_, _, err := login(repo, "wrong")
 	assertInvalidCredentials(t, err)
 
-	if repo.deactivations != 1 {
-		t.Fatalf("deactivations = %d, want 1", repo.deactivations)
+	if len(repo.locks) != 1 {
+		t.Fatalf("locks = %d, want 1", len(repo.locks))
 	}
 
-	if repo.revokes != 1 {
-		t.Fatalf("session revokes = %d, want 1", repo.revokes)
+	if until := repo.locks[0]; until.Before(before.Add(loginLockDuration)) || until.After(time.Now().UTC().Add(loginLockDuration)) {
+		t.Errorf("locked until %v, want about now + %v", until, loginLockDuration)
 	}
 
-	if len(repo.activities) != 1 || repo.activities[0] != "LOGIN_FAILED" {
-		t.Fatalf("activities = %v, want [LOGIN_FAILED]", repo.activities)
+	if repo.revokes != 0 {
+		t.Error("a temporary lock must not revoke the owner's sessions")
+	}
+
+	if len(repo.activities) != 1 || repo.activities[0] != "LOGIN_LOCKED" {
+		t.Fatalf("activities = %v, want [LOGIN_LOCKED]", repo.activities)
+	}
+}
+
+func lockedUser(until time.Time) *model.UserSession {
+	u := newLoginUser(true, 0)
+	u.LockedUntil = &until
+	return u
+}
+
+func TestLoginWhileLockedWrongPassword(t *testing.T) {
+	fakeBcrypt(t)
+	repo := &fakeLoginRepo{user: lockedUser(time.Now().UTC().Add(10 * time.Minute))}
+
+	_, _, err := login(repo, "wrong")
+	assertInvalidCredentials(t, err)
+
+	if repo.transactions != 0 {
+		t.Fatal("failed attempts while locked must not be counted")
+	}
+}
+
+func TestLoginWhileLockedCorrectPassword(t *testing.T) {
+	fakeBcrypt(t)
+	repo := &fakeLoginRepo{user: lockedUser(time.Now().UTC().Add(10*time.Minute + 30*time.Second))}
+
+	_, _, err := login(repo, correctPassword)
+
+	var apiErr response.APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("err = %v, want 429", err)
+	}
+
+	if !strings.Contains(apiErr.Message, "11 minutes") {
+		t.Errorf("message = %q, want the remaining time rounded up (11 minutes)", apiErr.Message)
+	}
+
+	if repo.sessions != 0 {
+		t.Fatal("locked user must not get a session")
+	}
+}
+
+func TestLoginAfterLockExpired(t *testing.T) {
+	fakeBcrypt(t)
+	repo := &fakeLoginRepo{user: lockedUser(time.Now().UTC().Add(-time.Minute))}
+
+	if _, _, err := login(repo, correctPassword); err != nil {
+		t.Fatalf("Login after lock expired: %v", err)
+	}
+
+	if repo.resets != 1 || repo.sessions != 1 {
+		t.Fatalf("resets=%d sessions=%d, want 1 and 1", repo.resets, repo.sessions)
 	}
 }
 
@@ -246,8 +298,8 @@ func TestLoginSuccess(t *testing.T) {
 		t.Fatal("expected access and refresh tokens")
 	}
 
-	if len(repo.loginFailed) != 1 || repo.loginFailed[0] != 0 {
-		t.Fatalf("login_failed updates = %v, want reset to [0]", repo.loginFailed)
+	if repo.resets != 1 {
+		t.Fatalf("login failure resets = %d, want 1", repo.resets)
 	}
 
 	if repo.sessions != 1 {
@@ -257,13 +309,12 @@ func TestLoginSuccess(t *testing.T) {
 
 func TestLoginLockoutAlreadyDoneByConcurrentRequest(t *testing.T) {
 	fakeBcrypt(t)
-	repo := &fakeLoginRepo{user: newLoginUser(true, 3), alreadyInactive: true}
+	repo := &fakeLoginRepo{user: newLoginUser(true, 3), alreadyLocked: true}
 
 	_, _, err := login(repo, "wrong")
 	assertInvalidCredentials(t, err)
 
-	if repo.revokes != 0 || len(repo.activities) != 0 {
-		t.Fatalf("revokes=%d activities=%v, want none: another request already locked the account",
-			repo.revokes, repo.activities)
+	if len(repo.activities) != 0 {
+		t.Fatalf("activities = %v, want none: another request already locked the account", repo.activities)
 	}
 }

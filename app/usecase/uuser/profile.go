@@ -130,7 +130,7 @@ func (u *usecase) ChangeMyPassword(ctx context.Context, actor request.UserActor,
 			return err
 		}
 
-		if err := u.repoUser.UpdateLoginFailed(ctxWithTx, actor.UserID, 0); err != nil {
+		if err := u.repoUser.ResetLoginFailures(ctxWithTx, actor.UserID); err != nil {
 			return err
 		}
 

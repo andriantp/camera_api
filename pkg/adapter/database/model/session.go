@@ -38,4 +38,5 @@ type UserSession struct {
 	Active      bool       `gorm:"column:active"`
 	LastLoginAt *time.Time `gorm:"column:last_login_at"`
 	LoginFailed int        `gorm:"column:login_failed"`
+	LockedUntil *time.Time `gorm:"column:locked_until"`
 }

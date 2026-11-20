@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -53,9 +54,15 @@ func (u *usecase) GetExpire() Expire {
 	}
 }
 
-// maxLoginFailed is how many consecutive failed logins are allowed; the next
-// one deactivates the account.
-const maxLoginFailed = 3
+const (
+	// maxLoginFailed is how many consecutive failed logins are allowed; the
+	// next one locks the account for loginLockDuration.
+	maxLoginFailed = 3
+
+	// loginLockDuration is how long an account stays locked. The lock lifts
+	// by itself, so failed guesses can't lock an account out permanently.
+	loginLockDuration = 15 * time.Minute
+)
 
 // errInvalidCredentials is returned for every failed login (unknown user,
 // wrong password, lockout) so responses don't reveal which usernames exist.
@@ -119,6 +126,24 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 		}
 	}
 
+	now := time.Now().UTC()
+
+	// Like the inactive check, only reveal a lock to someone who knows the
+	// password. Failed attempts while locked are not counted, so they can't
+	// extend the lock.
+	if user.LockedUntil != nil && user.LockedUntil.After(now) {
+		if err != nil {
+			return nil, nil, errInvalidCredentials
+		}
+
+		minutes := int(math.Ceil(user.LockedUntil.Sub(now).Minutes()))
+
+		return nil, nil, response.APIError{
+			StatusCode: http.StatusTooManyRequests,
+			Message:    fmt.Sprintf("Account temporarily locked. Try again in %d minutes", minutes),
+		}
+	}
+
 	if err != nil {
 		err = u.repoUser.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
 			failed, err := u.repoUser.IncrementLoginFailed(ctxWithTx, user.UserUUID)
@@ -131,18 +156,15 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 			}
 
 			// Concurrent failed logins may all pass the limit; only the one
-			// that actually deactivates the user revokes sessions and logs it.
-			deactivated, err := u.repoUser.DeactivateIfActive(ctxWithTx, user.UserUUID)
-			if err != nil || !deactivated {
-				return err
-			}
-
-			if err := u.repoUser.RevokeUserSessions(ctxWithTx, user.UserUUID, time.Now().UTC(), ""); err != nil {
+			// that actually sets the lock logs it.
+			locked, err := u.repoUser.LockUser(ctxWithTx, user.UserUUID, now.Add(loginLockDuration), now)
+			if err != nil || !locked {
 				return err
 			}
 
 			msg := fmt.Sprintf(
-				"Deactivated user after %d failed login attempts from %s",
+				"Locked for %s after %d failed login attempts from %s",
+				loginLockDuration,
 				failed,
 				body.UserAgent,
 			)
@@ -152,7 +174,7 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 				SessionID:   nil,
 				IPAddress:   body.IPAddress,
 				UserAgent:   body.UserAgent,
-				Activity:    "LOGIN_FAILED",
+				Activity:    "LOGIN_LOCKED",
 				Message:     &msg,
 			}
 
@@ -160,7 +182,7 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 		})
 
 		if err != nil {
-			logger.Error("Login-UpdateLoginFailed", err.Error())
+			logger.Error("Login-RecordFailure", err.Error())
 
 			return nil, nil, response.APIError{
 				StatusCode: http.StatusInternalServerError,
@@ -168,10 +190,8 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 			}
 		}
 
-		// The lockout uses the same response as any failed login; otherwise
-		// a few wrong guesses would confirm that the username exists. The
-		// user sees "User Not Active" on their next login with the right
-		// password.
+		// Locking uses the same response as any failed login; otherwise a
+		// few wrong guesses would confirm that the username exists.
 		return nil, nil, errInvalidCredentials
 	}
 
@@ -195,11 +215,10 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 		}
 	}
 
-	now := time.Now().UTC()
 	err = u.repoUser.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
-		// reset login_failed
-		if user.LoginFailed > 0 {
-			if err := u.repoUser.UpdateLoginFailed(ctxWithTx, user.UserUUID, 0); err != nil {
+		// Clear failed attempts and any expired lock.
+		if user.LoginFailed > 0 || user.LockedUntil != nil {
+			if err := u.repoUser.ResetLoginFailures(ctxWithTx, user.UserUUID); err != nil {
 				return err
 			}
 		}

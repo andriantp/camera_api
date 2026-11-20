@@ -516,6 +516,7 @@ func (u *usecase) ResetPassword(ctx context.Context, actor request.UserActor, us
 
 	targetUser.Password = hashedPassword
 	targetUser.LoginFailed = 0
+	targetUser.LockedUntil = nil
 	err = u.repoUser.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
 		if err := u.repoUser.UpdateUser(ctxWithTx, targetUser); err != nil {
 			return err
@@ -644,10 +645,9 @@ func (u *usecase) UpdateUserStatus(ctx context.Context, actor request.UserActor,
 			}
 		}
 
-		// Reactivating a locked-out user starts a fresh count; otherwise a
-		// single typo would lock the account again immediately.
+		// Reactivating a user starts a fresh count and lifts any lock.
 		if targetUser.Active {
-			if err := u.repoUser.UpdateLoginFailed(ctxWithTx, targetUser.UUID.String(), 0); err != nil {
+			if err := u.repoUser.ResetLoginFailures(ctxWithTx, targetUser.UUID.String()); err != nil {
 				return err
 			}
 		}

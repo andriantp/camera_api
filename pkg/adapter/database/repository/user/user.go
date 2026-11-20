@@ -19,9 +19,9 @@ type User interface {
 
 	UpdateUsername(ctx context.Context, userUUID, username string) error
 	UpdatePassword(ctx context.Context, userUUID, password string) error
-	UpdateLoginFailed(ctx context.Context, userUUID string, loginFailed int) error
 	IncrementLoginFailed(ctx context.Context, userUUID string) (int, error)
-	DeactivateIfActive(ctx context.Context, userUUID string) (bool, error)
+	LockUser(ctx context.Context, userUUID string, until, now time.Time) (bool, error)
+	ResetLoginFailures(ctx context.Context, userUUID string) error
 	UpdateLastLogin(ctx context.Context, userUUID string, timestamp time.Time) error
 	UpdateStatus(ctx context.Context, userUUID string, status bool) error
 
@@ -44,7 +44,8 @@ func (r *repo) FindUserByUserName(ctx context.Context, username string) (*model.
 			r.uuid AS role_uuid,
 			u.active AS active,
 			u.last_login_at AS last_login_at,
-			u.login_failed AS login_failed
+			u.login_failed AS login_failed,
+			u.locked_until AS locked_until
 		`).
 		Joins("JOIN roles r ON r.uuid = u.role_id").
 		Where("u.username = ? AND u.deleted_at IS NULL", username).
@@ -224,10 +225,6 @@ func (r *repo) UpdatePassword(ctx context.Context, userUUID, password string) er
 	return r.provider.Db(ctx).Model(&model.User{}).Where("uuid = ?", userUUID).Update("password", password).Error
 }
 
-func (r *repo) UpdateLoginFailed(ctx context.Context, userUUID string, loginFailed int) error {
-	return r.provider.Db(ctx).Model(&model.User{}).Where("uuid = ?", userUUID).Update("login_failed", loginFailed).Error
-}
-
 // IncrementLoginFailed adds one failed attempt in a single statement and
 // returns the new count, so concurrent failed logins can't overwrite each
 // other's increments.
@@ -252,19 +249,35 @@ func (r *repo) IncrementLoginFailed(ctx context.Context, userUUID string) (int, 
 	return count, nil
 }
 
-// DeactivateIfActive deactivates a user and reports whether this call did it.
-// Only one of several concurrent callers gets true.
-func (r *repo) DeactivateIfActive(ctx context.Context, userUUID string) (bool, error) {
+// LockUser locks a user until the given time and clears the failed-attempt
+// counter. It reports whether this call set the lock: if the user is already
+// locked (e.g. by a concurrent failed login), it returns false.
+func (r *repo) LockUser(ctx context.Context, userUUID string, until, now time.Time) (bool, error) {
 	result := r.provider.Db(ctx).
 		Model(&model.User{}).
-		Where("uuid = ? AND active = ?", userUUID, true).
-		Update("active", false)
+		Where("uuid = ? AND (locked_until IS NULL OR locked_until <= ?)", userUUID, now).
+		Updates(map[string]interface{}{
+			"locked_until": until,
+			"login_failed": 0,
+		})
 
 	if result.Error != nil {
 		return false, result.Error
 	}
 
 	return result.RowsAffected == 1, nil
+}
+
+// ResetLoginFailures clears the failed-attempt counter and any lock.
+func (r *repo) ResetLoginFailures(ctx context.Context, userUUID string) error {
+	return r.provider.Db(ctx).
+		Model(&model.User{}).
+		Where("uuid = ?", userUUID).
+		Updates(map[string]interface{}{
+			"login_failed": 0,
+			"locked_until": nil,
+		}).
+		Error
 }
 
 func (r *repo) UpdateLastLogin(ctx context.Context, userUUID string, timestamp time.Time) error {
