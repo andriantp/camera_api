@@ -148,6 +148,7 @@ func ReadVault(s HashiCorp) (*Setting, *app.Setting, error) {
 			Cors:          setting.Server.Cors,
 			AllowOrigins:  setting.Server.AllowOrigins,
 			Swagger:       setting.Server.Swagger,
+			TrustProxy:    setting.Server.TrustProxy,
 		},
 
 		Token: token.Token{

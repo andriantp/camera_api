@@ -15,18 +15,30 @@ type rateLimitEntry struct {
 	startedAt time.Time
 }
 
-type RateLimiter struct {
-	mu      sync.Mutex
-	clients map[string]*rateLimitEntry
+// rateLimitStore holds the counters of a single limiter.
+// Every call to RateLimiter.Middleware gets its own store, so limiters with
+// different limits/windows never share keys or wipe each other's entries.
+type rateLimitStore struct {
+	mu        sync.Mutex
+	limit     int
+	window    time.Duration
+	clients   map[string]*rateLimitEntry
+	lastSweep time.Time
 }
 
+type RateLimiter struct{}
+
 func NewRateLimiter() *RateLimiter {
-	return &RateLimiter{
-		clients: make(map[string]*rateLimitEntry),
-	}
+	return &RateLimiter{}
 }
 
 func (r *RateLimiter) Middleware(limit int, window time.Duration, keyFunc func(echo.Context) string) echo.MiddlewareFunc {
+	store := &rateLimitStore{
+		limit:   limit,
+		window:  window,
+		clients: make(map[string]*rateLimitEntry),
+	}
+
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if limit <= 0 || window <= 0 {
@@ -44,10 +56,7 @@ func (r *RateLimiter) Middleware(limit int, window time.Duration, keyFunc func(e
 				}
 			}
 
-			now := time.Now()
-
-			allowed := r.allow(key, limit, window, now)
-			if !allowed {
+			if !store.allow(key, time.Now()) {
 				return response.APIError{
 					StatusCode: http.StatusTooManyRequests,
 					Message:    "too many requests",
@@ -59,21 +68,24 @@ func (r *RateLimiter) Middleware(limit int, window time.Duration, keyFunc func(e
 	}
 }
 
-func (r *RateLimiter) allow(key string, limit int, window time.Duration, now time.Time) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+func (s *rateLimitStore) allow(key string, now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Remove expired entries.
-	for clientKey, entry := range r.clients {
-		if now.Sub(entry.startedAt) >= window {
-			delete(r.clients, clientKey)
+	// Sweep expired entries at most once per window instead of on every
+	// request, keeping the hot path O(1) while bounding memory usage.
+	if now.Sub(s.lastSweep) >= s.window {
+		for clientKey, entry := range s.clients {
+			if now.Sub(entry.startedAt) >= s.window {
+				delete(s.clients, clientKey)
+			}
 		}
+		s.lastSweep = now
 	}
 
-	entry, exists := r.clients[key]
-
-	if !exists {
-		r.clients[key] = &rateLimitEntry{
+	entry, exists := s.clients[key]
+	if !exists || now.Sub(entry.startedAt) >= s.window {
+		s.clients[key] = &rateLimitEntry{
 			count:     1,
 			startedAt: now,
 		}
@@ -81,7 +93,7 @@ func (r *RateLimiter) allow(key string, limit int, window time.Duration, now tim
 		return true
 	}
 
-	if entry.count >= limit {
+	if entry.count >= s.limit {
 		return false
 	}
 

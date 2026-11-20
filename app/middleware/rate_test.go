@@ -344,3 +344,99 @@ func TestRateLimiterEmptyKey(t *testing.T) {
 		t.Fatal("expected invalid key error")
 	}
 }
+func TestRateLimiterSeparateLimitersDoNotShareKeys(t *testing.T) {
+	e := echo.New()
+	rateLimiter := middleware.NewRateLimiter()
+
+	next := func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	}
+
+	sameKey := func(c echo.Context) string {
+		return "same-key"
+	}
+
+	login := rateLimiter.Middleware(1, time.Minute, sameKey)(next)
+	refresh := rateLimiter.Middleware(5, time.Minute, sameKey)(next)
+
+	for i := 0; i < 5; i++ {
+		c := e.NewContext(httptest.NewRequest(http.MethodPost, "/", nil), httptest.NewRecorder())
+		if err := refresh(c); err != nil {
+			t.Fatalf("refresh request %d: %v", i+1, err)
+		}
+	}
+
+	c := e.NewContext(httptest.NewRequest(http.MethodPost, "/", nil), httptest.NewRecorder())
+	if err := login(c); err != nil {
+		t.Fatalf("login must not be affected by refresh limiter: %v", err)
+	}
+}
+
+func TestRateLimiterShortWindowDoesNotResetOtherLimiters(t *testing.T) {
+	e := echo.New()
+	rateLimiter := middleware.NewRateLimiter()
+
+	next := func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	}
+
+	key := func(c echo.Context) string {
+		return "client"
+	}
+
+	long := rateLimiter.Middleware(1, time.Minute, key)(next)
+	short := rateLimiter.Middleware(10, 20*time.Millisecond, key)(next)
+
+	newCtx := func() echo.Context {
+		return e.NewContext(httptest.NewRequest(http.MethodPost, "/", nil), httptest.NewRecorder())
+	}
+
+	if err := long(newCtx()); err != nil {
+		t.Fatalf("first long request: %v", err)
+	}
+
+	time.Sleep(30 * time.Millisecond)
+
+	// Triggers a sweep in the short-window limiter.
+	if err := short(newCtx()); err != nil {
+		t.Fatalf("short request: %v", err)
+	}
+
+	if err := long(newCtx()); err == nil {
+		t.Fatal("long-window limiter was reset by short-window limiter")
+	}
+}
+
+func TestRateLimiterIgnoresSpoofedForwardedFor(t *testing.T) {
+	e := echo.New()
+	e.IPExtractor = echo.ExtractIPDirect()
+	rateLimiter := middleware.NewRateLimiter()
+
+	next := func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	}
+
+	handler := rateLimiter.Middleware(
+		1,
+		time.Minute,
+		func(c echo.Context) string {
+			return c.RealIP()
+		},
+	)(next)
+
+	call := func(xff string) error {
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
+		req.RemoteAddr = "203.0.113.10:5555"
+		req.Header.Set(echo.HeaderXForwardedFor, xff)
+
+		return handler(e.NewContext(req, httptest.NewRecorder()))
+	}
+
+	if err := call("1.1.1.1"); err != nil {
+		t.Fatalf("first request: %v", err)
+	}
+
+	if err := call("2.2.2.2"); err == nil {
+		t.Fatal("spoofed X-Forwarded-For bypassed the rate limit")
+	}
+}
