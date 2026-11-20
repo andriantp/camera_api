@@ -1,0 +1,47 @@
+{
+  "general": {
+    "core": 0,
+    "log": "info"
+  },
+  "database": {
+    "migrate": true,
+    "host": "localhost",
+    "port": 5432,
+    "user": "camera_user",
+    "password": "change-me",
+    "name": "camera"
+  },
+  "server": {
+    "port": 8085,
+    "readTimeout": 30,
+    "writeTimeout": 5,
+    "idleTimeout": 3,
+    "jWTEXPToken": 15,
+    "jWTEXPRefresh": 168,
+    "cors": false,
+    "alloworigins": [
+      "https://example.com"
+    ],
+    "swagger": false,
+    "trustProxy": false
+  },
+  "token": {
+    "issuer": "camera_api",
+    "secret": "change-me-to-a-long-random-string"
+  },
+  "camera": {
+    "timeout": 30,
+    "download": 15,
+    "key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "s3": {
+    "endpoint": "localhost:9000",
+    "region": "",
+    "secure": false,
+    "token": "",
+    "accessKeyID": "minio-access-key",
+    "secretAccessKey": "minio-secret-key",
+    "bucketName": "camera",
+    "expire": 5
+  }
+}
