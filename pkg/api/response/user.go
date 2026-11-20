@@ -23,8 +23,9 @@ type (
 	}
 
 	Range struct {
-		From time.Time `json:"from"`
-		To   time.Time `json:"to"`
+		// Nil (JSON null) means no bound on that side.
+		From *time.Time `json:"from"`
+		To   *time.Time `json:"to"`
 	}
 
 	Activity struct {

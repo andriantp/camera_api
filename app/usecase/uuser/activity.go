@@ -19,7 +19,7 @@ type Activity interface {
 }
 
 func (u *usecase) GetMyActivities(ctx context.Context, actor request.UserActor, filter request.Pagination) (*response.ActivityUser, error) {
-	start, end, loc, err := helper.ConvertTime(filter.From, filter.To)
+	start, end, loc, err := helper.ConvertTimeRange(filter.From, filter.To)
 	if err != nil {
 		logger.Error("GetMyActivities-ConvertTime", err.Error())
 		return nil, err
@@ -28,8 +28,8 @@ func (u *usecase) GetMyActivities(ctx context.Context, actor request.UserActor, 
 	activities, err := u.repoUser.FindUserActivities(ctx, user.ActivityFilter{
 		ActorUserID: actor.UserID,
 		Target:      user.ActivityTargetAll,
-		From:        *start,
-		To:          *end,
+		From:        start,
+		To:          end,
 		Limit:       filter.Limit,
 		Offset:      filter.Offset,
 		Order:       filter.Order,
@@ -67,8 +67,8 @@ func (u *usecase) GetMyActivities(ctx context.Context, actor request.UserActor, 
 		Returned: len(result),
 		Activities: response.ActivityUserRange{
 			Range: response.Range{
-				From: filter.From,
-				To:   filter.To,
+				From: optionalTime(filter.From),
+				To:   optionalTime(filter.To),
 			},
 			Items: result,
 		},
@@ -114,7 +114,7 @@ func (u *usecase) GetUserActivities(ctx context.Context, actor request.UserActor
 		}
 	}
 
-	start, end, loc, err := helper.ConvertTime(filter.From, filter.To)
+	start, end, loc, err := helper.ConvertTimeRange(filter.From, filter.To)
 	if err != nil {
 		logger.Error("GetMyActivities-ConvertTime", err.Error())
 		return nil, err
@@ -123,8 +123,8 @@ func (u *usecase) GetUserActivities(ctx context.Context, actor request.UserActor
 	activities, err := u.repoUser.FindUserActivities(ctx, user.ActivityFilter{
 		ActorUserID: userUUID,
 		Target:      user.ActivityTarget(filter.Target),
-		From:        *start,
-		To:          *end,
+		From:        start,
+		To:          end,
 		Limit:       filter.Limit,
 		Offset:      filter.Offset,
 		Order:       filter.Order,
@@ -176,10 +176,20 @@ func (u *usecase) GetUserActivities(ctx context.Context, actor request.UserActor
 		Returned: len(result),
 		Activities: response.ActivityUserRange{
 			Range: response.Range{
-				From: filter.From,
-				To:   filter.To,
+				From: optionalTime(filter.From),
+				To:   optionalTime(filter.To),
 			},
 			Items: result,
 		},
 	}, nil
+}
+
+// optionalTime returns nil for the zero time, so unset range bounds are
+// rendered as JSON null instead of "0001-01-01T00:00:00Z".
+func optionalTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+
+	return &t
 }
