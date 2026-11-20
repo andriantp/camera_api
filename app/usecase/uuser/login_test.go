@@ -29,6 +29,9 @@ type fakeLoginRepo struct {
 	// alreadyLocked simulates a concurrent request that locked the user first.
 	alreadyLocked bool
 
+	updatePasswordErr error
+	passwordUpdates   []string
+
 	transactions int
 	resets       int
 	increments   int
@@ -50,6 +53,15 @@ func (f *fakeLoginRepo) FindUserByUserName(context.Context, string) (*model.User
 func (f *fakeLoginRepo) DoTransaction(ctx context.Context, fn func(context.Context, *gorm.DB) error) error {
 	f.transactions++
 	return fn(ctx, nil)
+}
+
+func (f *fakeLoginRepo) UpdatePassword(_ context.Context, _ string, hash string) error {
+	if f.updatePasswordErr != nil {
+		return f.updatePasswordErr
+	}
+
+	f.passwordUpdates = append(f.passwordUpdates, hash)
+	return nil
 }
 
 func (f *fakeLoginRepo) ResetLoginFailures(context.Context, string) error {
@@ -95,11 +107,11 @@ func fakeBcrypt(t *testing.T) *int {
 	t.Helper()
 
 	checks := 0
-	origCheck, origCreate := password.CheckPassword, password.CreatePassword
+	origCheck, origCreate, origRehash := password.CheckPassword, password.CreatePassword, password.NeedsRehash
 
 	password.CheckPassword = func(plain, hash string) (bool, error) {
 		checks++
-		if plain == correctPassword && hash == "hash-of-correct-password" {
+		if plain == correctPassword && (hash == "hash-of-correct-password" || hash == "old-cost-hash-of-correct-password") {
 			return true, nil
 		}
 
@@ -108,9 +120,12 @@ func fakeBcrypt(t *testing.T) *int {
 	password.CreatePassword = func(string) (string, error) {
 		return "dummy-hash", nil
 	}
+	password.NeedsRehash = func(hash string) bool {
+		return hash == "old-cost-hash-of-correct-password"
+	}
 
 	t.Cleanup(func() {
-		password.CheckPassword, password.CreatePassword = origCheck, origCreate
+		password.CheckPassword, password.CreatePassword, password.NeedsRehash = origCheck, origCreate, origRehash
 	})
 
 	return &checks
@@ -316,5 +331,49 @@ func TestLoginLockoutAlreadyDoneByConcurrentRequest(t *testing.T) {
 
 	if len(repo.activities) != 0 {
 		t.Fatalf("activities = %v, want none: another request already locked the account", repo.activities)
+	}
+}
+
+func TestLoginUpgradesOldPasswordHash(t *testing.T) {
+	tests := []struct {
+		name        string
+		stored      string
+		updateErr   error
+		wantUpdates int
+	}{
+		{name: "current cost: no rehash", stored: "hash-of-correct-password"},
+		{name: "old cost: rehashed", stored: "old-cost-hash-of-correct-password", wantUpdates: 1},
+		{name: "old cost, update fails: login still succeeds", stored: "old-cost-hash-of-correct-password", updateErr: errors.New("db down")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fakeBcrypt(t)
+			user := newLoginUser(true, 0)
+			user.Password = tt.stored
+			repo := &fakeLoginRepo{user: user, updatePasswordErr: tt.updateErr}
+
+			if _, _, err := login(repo, correctPassword); err != nil {
+				t.Fatalf("Login: %v", err)
+			}
+
+			if len(repo.passwordUpdates) != tt.wantUpdates {
+				t.Fatalf("password updates = %v, want %d", repo.passwordUpdates, tt.wantUpdates)
+			}
+		})
+	}
+}
+
+func TestLoginWrongPasswordDoesNotRehash(t *testing.T) {
+	fakeBcrypt(t)
+	user := newLoginUser(true, 0)
+	user.Password = "old-cost-hash-of-correct-password"
+	repo := &fakeLoginRepo{user: user}
+
+	_, _, err := login(repo, "wrong")
+	assertInvalidCredentials(t, err)
+
+	if len(repo.passwordUpdates) != 0 {
+		t.Fatal("a failed login must never touch the stored hash")
 	}
 }

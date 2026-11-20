@@ -263,6 +263,8 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 		}
 	}
 
+	u.upgradePasswordHash(ctx, user.UserUUID, body.Password, user.Password)
+
 	return &tokenKey, &tokenRefresh, nil
 }
 
@@ -387,4 +389,24 @@ func (u *usecase) Logout(ctx context.Context, actor request.UserActor) error {
 	}
 
 	return nil
+}
+
+// upgradePasswordHash re-hashes the password with the current bcrypt cost
+// when the stored hash uses another one. The plaintext is only available at
+// login, so this is the only place old hashes can be upgraded. It is best
+// effort: on failure the old hash stays valid and the next login retries.
+func (u *usecase) upgradePasswordHash(ctx context.Context, userUUID, plain, storedHash string) {
+	if !password.NeedsRehash(storedHash) {
+		return
+	}
+
+	hash, err := password.CreatePassword(plain)
+	if err != nil {
+		logger.Error("Login-UpgradePasswordHash", err.Error())
+		return
+	}
+
+	if err := u.repoUser.UpdatePassword(ctx, userUUID, hash); err != nil {
+		logger.Error("Login-UpgradePasswordHash", err.Error())
+	}
 }
