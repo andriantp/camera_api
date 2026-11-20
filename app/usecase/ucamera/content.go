@@ -15,7 +15,6 @@ import (
 	"path"
 	"time"
 
-	"github.com/andriantp/camera"
 	cameraModel "github.com/andriantp/camera/model"
 	"github.com/minio/minio-go/v7"
 )
@@ -64,16 +63,7 @@ func (u *usecase) GetContents(ctx context.Context, actor request.UserActor, came
 	}
 
 	data, err := u.camera.GetContents(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			SearchID: row.SearchID,
-			TrackID:  row.TrackID,
-		}, req,
+		cameraTarget(row), req,
 	)
 	if err != nil {
 		logger.Error("GetContents-Camera", err.Error())
@@ -111,16 +101,7 @@ func (u *usecase) FindContent(ctx context.Context, actor request.UserActor, came
 		return nil, err
 	}
 
-	target := adaptercamera.CameraTarget{
-		Credential: camera.Credential{
-			Host:     row.Host,
-			Username: row.Username,
-			Password: row.Password,
-		},
-		Protocol: row.Protocol.Name,
-		SearchID: row.SearchID,
-		TrackID:  row.TrackID,
-	}
+	target := cameraTarget(row)
 	content, err := u.camera.FindContent(ctx,
 		target,
 		request.SearchContent{
@@ -159,16 +140,7 @@ func (u *usecase) DownloadContent(ctx context.Context, actor request.UserActor, 
 		return nil, nil, err
 	}
 
-	target := adaptercamera.CameraTarget{
-		Credential: camera.Credential{
-			Host:     row.Host,
-			Username: row.Username,
-			Password: row.Password,
-		},
-		Protocol: row.Protocol.Name,
-		SearchID: row.SearchID,
-		TrackID:  row.TrackID,
-	}
+	target := cameraTarget(row)
 	content, err := u.camera.FindContent(ctx,
 		target,
 		request.SearchContent{
@@ -289,16 +261,7 @@ func (u *usecase) DownloadContentAtS3(ctx context.Context, actor request.UserAct
 }
 
 func (u *usecase) downloadContentToS3(ctx context.Context, row *model.Camera, start, end time.Time, filename, objectName string) (*minio.ObjectInfo, error) {
-	target := adaptercamera.CameraTarget{
-		Credential: camera.Credential{
-			Host:     row.Host,
-			Username: row.Username,
-			Password: row.Password,
-		},
-		Protocol: row.Protocol.Name,
-		SearchID: row.SearchID,
-		TrackID:  row.TrackID,
-	}
+	target := cameraTarget(row)
 
 	content, err := u.camera.FindContent(
 		ctx,

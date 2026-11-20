@@ -1,6 +1,7 @@
 package ucamera
 
 import (
+	adaptercamera "camera_api/pkg/adapter/camera"
 	"camera_api/pkg/adapter/database/model"
 	"camera_api/pkg/api/request"
 	"camera_api/pkg/api/response"
@@ -8,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/andriantp/camera"
 	"net/http"
 	"time"
 
@@ -184,5 +186,23 @@ func transactionError(operation string, err error, notFoundMessage string) error
 	return response.APIError{
 		StatusCode: http.StatusInternalServerError,
 		Message:    "Internal server error",
+	}
+}
+
+// cameraTarget builds the adapter target for a camera row. Every field is
+// passed; each adapter call reads only what it needs, and unset optional
+// values (profile, channel, search/track ID) fall back to adapter defaults.
+func cameraTarget(row *model.Camera) adaptercamera.CameraTarget {
+	return adaptercamera.CameraTarget{
+		Credential: camera.Credential{
+			Host:     row.Host,
+			Username: row.Username,
+			Password: row.Password,
+		},
+		Protocol: row.Protocol.Name,
+		Profile:  row.Profile,
+		Channel:  row.Channel,
+		SearchID: row.SearchID,
+		TrackID:  row.TrackID,
 	}
 }

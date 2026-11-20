@@ -1,7 +1,6 @@
 package ucamera
 
 import (
-	adaptercamera "camera_api/pkg/adapter/camera"
 	"camera_api/pkg/api/request"
 	"camera_api/pkg/api/response"
 	"camera_api/pkg/utils/logger"
@@ -12,7 +11,6 @@ import (
 	"path"
 	"time"
 
-	"github.com/andriantp/camera"
 	"github.com/andriantp/camera/driver/isapi"
 )
 
@@ -121,15 +119,7 @@ func (u *usecase) getSnapshot(ctx context.Context, actor request.UserActor, came
 		return "", nil, nil, err
 	}
 
-	target := adaptercamera.CameraTarget{
-		Credential: camera.Credential{
-			Host:     row.Host,
-			Username: row.Username,
-			Password: row.Password,
-		},
-		Protocol: row.Protocol.Name,
-		Channel:  row.Channel,
-	}
+	target := cameraTarget(row)
 
 	size, body, err := u.camera.Snapshot(ctx, target, isapi.SnapshotOptions{})
 	if err != nil {

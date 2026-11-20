@@ -7,8 +7,6 @@ import (
 	"context"
 
 	cameraModel "github.com/andriantp/camera/model"
-
-	"github.com/andriantp/camera"
 )
 
 type Device interface {
@@ -25,16 +23,7 @@ func (u *usecase) GetCapabilities(ctx context.Context, actor request.UserActor, 
 
 	capabilities, err := u.camera.GetCapability(
 		ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		},
+		cameraTarget(row),
 	)
 	if err != nil {
 		logger.Error("GetCapability", err.Error())
@@ -52,16 +41,7 @@ func (u *usecase) GetPTZCapability(ctx context.Context, actor request.UserActor,
 
 	capabilities, err := u.camera.GetPTZCapability(
 		ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		},
+		cameraTarget(row),
 	)
 	if err != nil {
 		logger.Error("GetPTZCapability", err.Error())
@@ -78,16 +58,7 @@ func (u *usecase) GetStorage(ctx context.Context, actor request.UserActor, camer
 	}
 
 	storage, err := u.camera.GetStorage(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		},
+		cameraTarget(row),
 	)
 	if err != nil {
 		logger.Error("GetPosition-Camera", err.Error())

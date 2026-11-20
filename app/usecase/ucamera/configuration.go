@@ -1,7 +1,6 @@
 package ucamera
 
 import (
-	adaptercamera "camera_api/pkg/adapter/camera"
 	"camera_api/pkg/adapter/database/model"
 	"camera_api/pkg/api/request"
 	"camera_api/pkg/api/response"
@@ -258,14 +257,7 @@ func (u *usecase) GetConfiguration(ctx context.Context, actor request.UserActor,
 	}
 
 	config, err := u.camera.GetConfiguration(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-		},
+		cameraTarget(row),
 	)
 	if err != nil {
 		logger.Error("GetConfiguration-GetConfiguration", err.Error())

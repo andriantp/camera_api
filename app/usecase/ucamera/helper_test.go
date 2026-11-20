@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"camera_api/pkg/adapter/database/model"
 	"camera_api/pkg/api/response"
 )
 
@@ -48,5 +49,40 @@ func TestParseMoveDuration(t *testing.T) {
 				t.Fatalf("parseMoveDuration(%q) = %v, want %v", tt.value, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCameraTargetMapsEveryField(t *testing.T) {
+	profile, channel, searchID, trackID := "profile_2", 3, 7, 201
+
+	row := &model.Camera{
+		Host:     "enc-host",
+		Username: "enc-user",
+		Password: "enc-pass",
+		Protocol: model.Protocol{Name: model.ProtocolISAPI},
+		Profile:  &profile,
+		Channel:  &channel,
+		SearchID: &searchID,
+		TrackID:  &trackID,
+	}
+
+	got := cameraTarget(row)
+
+	if got.Credential.Host != "enc-host" || got.Credential.Username != "enc-user" || got.Credential.Password != "enc-pass" {
+		t.Errorf("credential = %+v", got.Credential)
+	}
+
+	if got.Protocol != model.ProtocolISAPI {
+		t.Errorf("protocol = %q", got.Protocol)
+	}
+
+	if got.Profile != &profile || got.Channel != &channel || got.SearchID != &searchID || got.TrackID != &trackID {
+		t.Error("optional fields must point at the row's values")
+	}
+
+	// Unset optional fields stay nil so the adapter applies its defaults.
+	empty := cameraTarget(&model.Camera{})
+	if empty.Profile != nil || empty.Channel != nil || empty.SearchID != nil || empty.TrackID != nil {
+		t.Error("unset optional fields must stay nil")
 	}
 }

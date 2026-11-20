@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/andriantp/camera"
 	cameraModel "github.com/andriantp/camera/model"
 )
 
@@ -37,16 +36,7 @@ func (u *usecase) GetPosition(ctx context.Context, actor request.UserActor, came
 	}
 
 	position, err := u.camera.GetPosition(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		},
+		cameraTarget(row),
 	)
 	if err != nil {
 		logger.Error("GetPosition-Camera", err.Error())
@@ -69,16 +59,7 @@ func (u *usecase) CalibrationMove(ctx context.Context, actor request.UserActor, 
 
 	status, err := u.camera.CalibrationMove(
 		ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		},
+		cameraTarget(row),
 		cameraModel.PanTilt{
 			X: *req.Pan,
 			Y: *req.Tilt,
@@ -158,16 +139,7 @@ func (u *usecase) MoveTo(ctx context.Context, actor request.UserActor, cameraUUI
 	}
 
 	status, err := u.camera.Move(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		},
+		cameraTarget(row),
 		*panTilt,
 	)
 	if err != nil {
@@ -211,16 +183,7 @@ func (u *usecase) GetPresets(ctx context.Context, actor request.UserActor, camer
 	}
 
 	presets, err := u.camera.GetPresets(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		},
+		cameraTarget(row),
 	)
 	if err != nil {
 		logger.Error("GetPresets-GetPresets", err.Error())
@@ -251,16 +214,7 @@ func (u *usecase) MoveToPreset(ctx context.Context, actor request.UserActor, cam
 	}
 
 	if err := u.camera.GotoPreset(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		}, presetID,
+		cameraTarget(row), presetID,
 	); err != nil {
 		logger.Error("MoveToPreset-GotoPreset", err.Error())
 		return err
@@ -303,16 +257,7 @@ func (u *usecase) MoveToHome(ctx context.Context, actor request.UserActor, camer
 	}
 
 	if err := u.camera.GotoHome(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		}); err != nil {
+		cameraTarget(row)); err != nil {
 		logger.Error("MoveToHome-GotoHome", err.Error())
 		return err
 	}
@@ -340,16 +285,7 @@ func (u *usecase) GetZoom(ctx context.Context, actor request.UserActor, cameraUU
 	}
 
 	zoom, err := u.camera.GetZoom(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		},
+		cameraTarget(row),
 	)
 	if err != nil {
 		logger.Error("GetZoom-Camera", err.Error())
@@ -366,16 +302,7 @@ func (u *usecase) SetZoom(ctx context.Context, actor request.UserActor, cameraUU
 	}
 
 	zoom, err := u.camera.SetZoom(ctx,
-		adaptercamera.CameraTarget{
-			Credential: camera.Credential{
-				Host:     row.Host,
-				Username: row.Username,
-				Password: row.Password,
-			},
-			Protocol: row.Protocol.Name,
-			Profile:  row.Profile,
-			Channel:  row.Channel,
-		}, value,
+		cameraTarget(row), value,
 	)
 	if err != nil {
 		logger.Error("GetZoom-Camera", err.Error())
