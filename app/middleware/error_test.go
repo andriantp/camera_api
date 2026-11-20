@@ -107,3 +107,31 @@ func TestErrorMiddlewareUnknownError(t *testing.T) {
 		)
 	}
 }
+
+func TestErrorMiddlewareAfterResponseCommitted(t *testing.T) {
+	e := echo.New()
+
+	handler := middleware.ErrorMiddleware(func(c echo.Context) error {
+		// Simulate a download whose source fails mid-stream.
+		c.Response().Header().Set(echo.HeaderContentType, "video/mp4")
+		c.Response().WriteHeader(http.StatusOK)
+		_, _ = c.Response().Write([]byte("partial-video-bytes"))
+
+		return errors.New("camera connection reset")
+	})
+
+	rec := httptest.NewRecorder()
+	c := e.NewContext(httptest.NewRequest(http.MethodGet, "/download", nil), rec)
+
+	if err := handler(c); err != nil {
+		t.Fatalf("ErrorMiddleware returned %v, want nil after commit", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want the already sent 200", rec.Code)
+	}
+
+	if got := rec.Body.String(); got != "partial-video-bytes" {
+		t.Fatalf("body = %q, a JSON error must not be appended to the stream", got)
+	}
+}

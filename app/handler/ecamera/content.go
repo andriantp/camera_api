@@ -154,22 +154,13 @@ func (h *handler) DownloadContent(c echo.Context) error {
 	}
 	res.Header().Set(echo.HeaderContentDisposition, fmt.Sprintf(`attachment; filename="%s"`, filename))
 
-	res.WriteHeader(http.StatusOK)
-
+	// c.Stream writes the status header itself; writing it here as well
+	// logged "response already committed" on every download.
 	return c.Stream(
 		http.StatusOK,
 		"video/mp4",
 		body,
 	)
-	// written, err := io.Copy(res, body)
-	// if err != nil {
-	// 	logger.Error(
-	// 		"DownloadContent-Stream",
-	// 		fmt.Sprintf("written[%d]: %s", written, err.Error()),
-	// 	)
-	// 	return err
-	// }
-	// return nil
 }
 
 // @Summary Download content s3
