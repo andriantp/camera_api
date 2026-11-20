@@ -61,7 +61,7 @@ func TestReadVault(t *testing.T) {
 		SortMapKeys:            true,
 		ValidateJsonRawMessage: true,
 	}.Froze()
-	
+
 	js, err := json.MarshalIndent(appSetting, "", "  ")
 	if err != nil {
 		t.Fatalf("error marshal app setting: %v", err)
