@@ -32,7 +32,7 @@ type Setting struct {
 }
 
 type icamera struct {
-	key         []byte
+	cipher      *crypto.Cipher
 	clientOnvif *onvif.Client
 	clientIsapi *isapi.Client
 	defaults    DefaultConfig
@@ -54,6 +54,12 @@ func NewCamera(setting Setting) (Camera, error) {
 		return nil, err
 	}
 
+	// Built once: every camera request decrypts three credential fields.
+	aesCipher, err := crypto.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := camera.Config{
 		Timeout:         setting.Timeout,
 		DownloadTimeout: setting.Download,
@@ -62,7 +68,7 @@ func NewCamera(setting Setting) (Camera, error) {
 	client := camera.New(cfg)
 
 	return &icamera{
-		key:         key,
+		cipher:      aesCipher,
 		clientOnvif: onvif.New(client),
 		clientIsapi: isapi.New(client),
 		defaults: DefaultConfig{
