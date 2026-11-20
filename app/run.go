@@ -71,7 +71,7 @@ func (a *appStruct) Run(ctx context.Context) error {
 	uCamera := ucamera.NewUsecase(repoUser, repoCamera, camera, storage)
 
 	// internalMiddleware
-	middle := internalMiddleware.NewMiddleware(a.setting.Token)
+	middle := internalMiddleware.NewMiddleware(a.setting.Token, uUser)
 	rateLimit := internalMiddleware.NewRateLimiter()
 
 	// Echo

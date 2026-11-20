@@ -23,6 +23,12 @@ func (Session) TableName() string {
 	return "sessions"
 }
 
+// ActiveSession is the result of checking that a session is still usable:
+// not logged out, and its user is active and not deleted.
+type ActiveSession struct {
+	RoleName string `gorm:"column:role_name"`
+}
+
 type UserSession struct {
 	UserName    string     `gorm:"column:user_name"`
 	UserUUID    string     `gorm:"column:user_uuid"`

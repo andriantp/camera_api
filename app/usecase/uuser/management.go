@@ -490,6 +490,11 @@ func (u *usecase) ResetPassword(ctx context.Context, actor request.UserActor, us
 			return err
 		}
 
+		// Force the target user to log in again with the new password.
+		if err := u.repoUser.RevokeUserSessions(ctxWithTx, targetUser.UUID.String(), now, ""); err != nil {
+			return err
+		}
+
 		// Update actor session.
 		if err := u.repoUser.UpdateSessionLastSeen(ctxWithTx, actor.SessionID, now, actor.IPAddress, actor.UserAgent); err != nil {
 			return err
@@ -599,6 +604,14 @@ func (u *usecase) UpdateUserStatus(ctx context.Context, actor request.UserActor,
 		if err := u.repoUser.UpdateStatus(ctxWithTx, targetUser.UUID.String(), targetUser.Active); err != nil {
 			return err
 		}
+
+		// Revoke sessions on deactivation so old tokens don't come back to
+		// life if the user is reactivated later.
+		if !targetUser.Active {
+			if err := u.repoUser.RevokeUserSessions(ctxWithTx, targetUser.UUID.String(), now, ""); err != nil {
+				return err
+			}
+		}
 		// Update actor session last seen.
 		if err := u.repoUser.UpdateSessionLastSeen(ctxWithTx, actor.SessionID, now, actor.IPAddress, actor.UserAgent); err != nil {
 			return err
@@ -705,6 +718,10 @@ func (u *usecase) DeleteUser(ctx context.Context, actor request.UserActor, userU
 	err = u.repoUser.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
 		// Soft delete target user.
 		if err := u.repoUser.DeleteUser(ctxWithTx, targetUser.UUID.String()); err != nil {
+			return err
+		}
+
+		if err := u.repoUser.RevokeUserSessions(ctxWithTx, targetUser.UUID.String(), now, ""); err != nil {
 			return err
 		}
 

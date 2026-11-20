@@ -51,6 +51,22 @@ func (m *Middleware) AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return unauthorizedResponse(c)
 		}
 
+		// A valid signature is not enough: the session may have been logged
+		// out or revoked, or the user deactivated/deleted, before the token
+		// expired.
+		role, err := m.sessions.ValidateSession(
+			c.Request().Context(),
+			claims.Session,
+			claims.User,
+		)
+		if err != nil {
+			return err
+		}
+
+		// Use the role from the database so role changes apply immediately
+		// instead of after the access token expires.
+		claims.Role = role
+
 		// Store claims in Echo context.
 		c.Set("user", claims)
 
