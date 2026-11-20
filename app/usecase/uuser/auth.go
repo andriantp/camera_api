@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -52,13 +53,44 @@ func (u *usecase) GetExpire() Expire {
 	}
 }
 
+// errInvalidCredentials is returned for every failed login (unknown user,
+// wrong password, lockout) so responses don't reveal which usernames exist.
+var errInvalidCredentials = response.APIError{
+	StatusCode: http.StatusUnauthorized,
+	Message:    "Invalid username or password",
+}
+
+var (
+	dummyHashOnce sync.Once
+	dummyHash     string
+)
+
+// checkDummyPassword runs a bcrypt comparison against a throwaway hash so a
+// login for an unknown username takes as long as one for an existing user.
+// The hash is created with password.CreatePassword, so it follows the same
+// bcrypt cost as real passwords.
+func checkDummyPassword(plain string) {
+	dummyHashOnce.Do(func() {
+		hash, err := password.CreatePassword("camera-api-dummy-password")
+		if err != nil {
+			logger.Error("Login-DummyHash", err.Error())
+			return
+		}
+
+		dummyHash = hash
+	})
+
+	if dummyHash != "" {
+		_, _ = password.CheckPassword(plain, dummyHash)
+	}
+}
+
 func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *string, error) {
 	user, err := u.repoUser.FindUserByUserName(ctx, body.UserName)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil, response.APIError{
-			StatusCode: http.StatusNotFound,
-			Message:    "User Not Found",
-		}
+		checkDummyPassword(body.Password)
+
+		return nil, nil, errInvalidCredentials
 	} else if err != nil {
 		logger.Error("Login-FindUserByUserName", err.Error())
 		return nil, nil, response.APIError{
@@ -67,14 +99,22 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 		}
 	}
 
+	_, err = password.CheckPassword(body.Password, user.Password)
+
+	// Only reveal that an account is inactive to someone who knows its
+	// password. Failed attempts on an inactive account are not counted, so
+	// they don't re-run the lockout or flood the activity log.
 	if !user.Active {
+		if err != nil {
+			return nil, nil, errInvalidCredentials
+		}
+
 		return nil, nil, response.APIError{
-			StatusCode: http.StatusConflict,
+			StatusCode: http.StatusForbidden,
 			Message:    "User Not Active",
 		}
 	}
 
-	_, err = password.CheckPassword(body.Password, user.Password)
 	if err != nil {
 		user.LoginFailed++
 		deactived := user.LoginFailed > 3
@@ -123,17 +163,11 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 			}
 		}
 
-		if deactived {
-			return nil, nil, response.APIError{
-				StatusCode: http.StatusUnauthorized,
-				Message:    "Please contact admin for activation",
-			}
-		}
-
-		return nil, nil, response.APIError{
-			StatusCode: http.StatusUnauthorized,
-			Message:    "Invalid username or password",
-		}
+		// The lockout uses the same response as any failed login; otherwise
+		// a few wrong guesses would confirm that the username exists. The
+		// user sees "User Not Active" on their next login with the right
+		// password.
+		return nil, nil, errInvalidCredentials
 	}
 
 	claims := token.ClaimsFromUserSession(user)
