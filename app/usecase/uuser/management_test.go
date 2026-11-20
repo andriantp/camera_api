@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"camera_api/pkg/adapter/database/model"
 	"camera_api/pkg/adapter/database/repository/user"
@@ -122,3 +123,93 @@ func TestActorRoleLookupErrors(t *testing.T) {
 }
 
 var gormNotFound = gorm.ErrRecordNotFound
+
+// fakeStatusRepo supports UpdateUserStatus.
+type fakeStatusRepo struct {
+	user.Repository
+
+	target *model.User
+
+	loginFailed []int
+	revokes     int
+}
+
+func (f *fakeStatusRepo) FindRoleByName(context.Context, string) (*model.Role, error) {
+	return &model.Role{ID: 1, Name: "super_admin"}, nil
+}
+
+func (f *fakeStatusRepo) FindUserByUserUUIDForUpdate(context.Context, string) (*model.User, error) {
+	copied := *f.target
+	return &copied, nil
+}
+
+func (f *fakeStatusRepo) FindRoleByUUID(context.Context, string) (*model.Role, error) {
+	return &model.Role{ID: 3, Name: "operator"}, nil
+}
+
+func (f *fakeStatusRepo) DoTransaction(ctx context.Context, fn func(context.Context, *gorm.DB) error) error {
+	return fn(ctx, nil)
+}
+
+func (f *fakeStatusRepo) UpdateStatus(context.Context, string, bool) error { return nil }
+
+func (f *fakeStatusRepo) UpdateLoginFailed(_ context.Context, _ string, n int) error {
+	f.loginFailed = append(f.loginFailed, n)
+	return nil
+}
+
+func (f *fakeStatusRepo) RevokeUserSessions(context.Context, string, time.Time, string) error {
+	f.revokes++
+	return nil
+}
+
+func (f *fakeStatusRepo) UpdateSessionLastSeen(context.Context, string, time.Time, string, string) error {
+	return nil
+}
+
+func (f *fakeStatusRepo) CreateActivity(context.Context, *model.UserActivity) error { return nil }
+
+func TestUpdateUserStatusResetsLoginFailedOnReactivation(t *testing.T) {
+	tests := []struct {
+		name            string
+		currentlyActive bool
+		setActive       bool
+		wantReset       bool
+		wantRevokes     int
+	}{
+		{name: "reactivate locked-out user", currentlyActive: false, setActive: true, wantReset: true},
+		{name: "deactivate user", currentlyActive: true, setActive: false, wantRevokes: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeStatusRepo{target: &model.User{
+				UUID:        uuid.New(),
+				Username:    "budi",
+				Active:      tt.currentlyActive,
+				LoginFailed: 4,
+			}}
+			u := NewUsecase(Expire{}, testJWT, repo)
+
+			active := tt.setActive
+			err := u.UpdateUserStatus(
+				context.Background(),
+				request.UserActor{UserID: "admin-1", SessionID: "s1", Role: "super_admin"},
+				repo.target.UUID.String(),
+				request.UpdateUserStatus{Active: &active},
+			)
+			if err != nil {
+				t.Fatalf("UpdateUserStatus: %v", err)
+			}
+
+			reset := len(repo.loginFailed) == 1 && repo.loginFailed[0] == 0
+			if reset != tt.wantReset {
+				t.Errorf("login_failed updates = %v, want reset=%v", repo.loginFailed, tt.wantReset)
+			}
+
+			if repo.revokes != tt.wantRevokes {
+				t.Errorf("revokes = %d, want %d", repo.revokes, tt.wantRevokes)
+			}
+		})
+	}
+}

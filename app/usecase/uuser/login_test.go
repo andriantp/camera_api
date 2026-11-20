@@ -25,9 +25,14 @@ type fakeLoginRepo struct {
 
 	user *model.UserSession
 
+	// alreadyInactive simulates a concurrent request that deactivated the
+	// user first.
+	alreadyInactive bool
+
 	transactions  int
 	loginFailed   []int
-	statusUpdates []bool
+	increments    int
+	deactivations int
 	revokes       int
 	activities    []string
 	sessions      int
@@ -52,9 +57,18 @@ func (f *fakeLoginRepo) UpdateLoginFailed(_ context.Context, _ string, n int) er
 	return nil
 }
 
-func (f *fakeLoginRepo) UpdateStatus(_ context.Context, _ string, active bool) error {
-	f.statusUpdates = append(f.statusUpdates, active)
-	return nil
+func (f *fakeLoginRepo) IncrementLoginFailed(context.Context, string) (int, error) {
+	f.increments++
+	return f.user.LoginFailed + f.increments, nil
+}
+
+func (f *fakeLoginRepo) DeactivateIfActive(context.Context, string) (bool, error) {
+	if f.alreadyInactive {
+		return false, nil
+	}
+
+	f.deactivations++
+	return true, nil
 }
 
 func (f *fakeLoginRepo) RevokeUserSessions(context.Context, string, time.Time, string) error {
@@ -158,11 +172,15 @@ func TestLoginWrongPasswordCountsFailure(t *testing.T) {
 	_, _, err := login(repo, "wrong")
 	assertInvalidCredentials(t, err)
 
-	if len(repo.loginFailed) != 1 || repo.loginFailed[0] != 1 {
-		t.Fatalf("login_failed updates = %v, want [1]", repo.loginFailed)
+	if repo.increments != 1 {
+		t.Fatalf("login_failed increments = %d, want 1", repo.increments)
 	}
 
-	if len(repo.statusUpdates) != 0 {
+	if len(repo.loginFailed) != 0 {
+		t.Fatalf("login_failed must be incremented atomically, not overwritten: %v", repo.loginFailed)
+	}
+
+	if repo.deactivations != 0 {
 		t.Fatal("account must not be deactivated yet")
 	}
 }
@@ -174,8 +192,8 @@ func TestLoginLockoutUsesGenericResponse(t *testing.T) {
 	_, _, err := login(repo, "wrong")
 	assertInvalidCredentials(t, err)
 
-	if len(repo.statusUpdates) != 1 || repo.statusUpdates[0] != false {
-		t.Fatalf("status updates = %v, want [false]", repo.statusUpdates)
+	if repo.deactivations != 1 {
+		t.Fatalf("deactivations = %d, want 1", repo.deactivations)
 	}
 
 	if repo.revokes != 1 {
@@ -234,5 +252,18 @@ func TestLoginSuccess(t *testing.T) {
 
 	if repo.sessions != 1 {
 		t.Fatalf("sessions created = %d, want 1", repo.sessions)
+	}
+}
+
+func TestLoginLockoutAlreadyDoneByConcurrentRequest(t *testing.T) {
+	fakeBcrypt(t)
+	repo := &fakeLoginRepo{user: newLoginUser(true, 3), alreadyInactive: true}
+
+	_, _, err := login(repo, "wrong")
+	assertInvalidCredentials(t, err)
+
+	if repo.revokes != 0 || len(repo.activities) != 0 {
+		t.Fatalf("revokes=%d activities=%v, want none: another request already locked the account",
+			repo.revokes, repo.activities)
 	}
 }

@@ -643,6 +643,14 @@ func (u *usecase) UpdateUserStatus(ctx context.Context, actor request.UserActor,
 				return err
 			}
 		}
+
+		// Reactivating a locked-out user starts a fresh count; otherwise a
+		// single typo would lock the account again immediately.
+		if targetUser.Active {
+			if err := u.repoUser.UpdateLoginFailed(ctxWithTx, targetUser.UUID.String(), 0); err != nil {
+				return err
+			}
+		}
 		// Update actor session last seen.
 		if err := u.repoUser.UpdateSessionLastSeen(ctxWithTx, actor.SessionID, now, actor.IPAddress, actor.UserAgent); err != nil {
 			return err

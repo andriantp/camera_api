@@ -53,6 +53,10 @@ func (u *usecase) GetExpire() Expire {
 	}
 }
 
+// maxLoginFailed is how many consecutive failed logins are allowed; the next
+// one deactivates the account.
+const maxLoginFailed = 3
+
 // errInvalidCredentials is returned for every failed login (unknown user,
 // wrong password, lockout) so responses don't reveal which usernames exist.
 var errInvalidCredentials = response.APIError{
@@ -116,19 +120,20 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 	}
 
 	if err != nil {
-		user.LoginFailed++
-		deactived := user.LoginFailed > 3
-
 		err = u.repoUser.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
-			if err := u.repoUser.UpdateLoginFailed(ctxWithTx, user.UserUUID, user.LoginFailed); err != nil {
+			failed, err := u.repoUser.IncrementLoginFailed(ctxWithTx, user.UserUUID)
+			if err != nil {
 				return err
 			}
 
-			if !deactived {
+			if failed <= maxLoginFailed {
 				return nil
 			}
 
-			if err := u.repoUser.UpdateStatus(ctxWithTx, user.UserUUID, false); err != nil {
+			// Concurrent failed logins may all pass the limit; only the one
+			// that actually deactivates the user revokes sessions and logs it.
+			deactivated, err := u.repoUser.DeactivateIfActive(ctxWithTx, user.UserUUID)
+			if err != nil || !deactivated {
 				return err
 			}
 
@@ -138,7 +143,7 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 
 			msg := fmt.Sprintf(
 				"Deactivated user after %d failed login attempts from %s",
-				user.LoginFailed,
+				failed,
 				body.UserAgent,
 			)
 

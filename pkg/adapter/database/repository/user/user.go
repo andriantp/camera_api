@@ -20,6 +20,8 @@ type User interface {
 	UpdateUsername(ctx context.Context, userUUID, username string) error
 	UpdatePassword(ctx context.Context, userUUID, password string) error
 	UpdateLoginFailed(ctx context.Context, userUUID string, loginFailed int) error
+	IncrementLoginFailed(ctx context.Context, userUUID string) (int, error)
+	DeactivateIfActive(ctx context.Context, userUUID string) (bool, error)
 	UpdateLastLogin(ctx context.Context, userUUID string, timestamp time.Time) error
 	UpdateStatus(ctx context.Context, userUUID string, status bool) error
 
@@ -224,6 +226,45 @@ func (r *repo) UpdatePassword(ctx context.Context, userUUID, password string) er
 
 func (r *repo) UpdateLoginFailed(ctx context.Context, userUUID string, loginFailed int) error {
 	return r.provider.Db(ctx).Model(&model.User{}).Where("uuid = ?", userUUID).Update("login_failed", loginFailed).Error
+}
+
+// IncrementLoginFailed adds one failed attempt in a single statement and
+// returns the new count, so concurrent failed logins can't overwrite each
+// other's increments.
+func (r *repo) IncrementLoginFailed(ctx context.Context, userUUID string) (int, error) {
+	var count int
+
+	result := r.provider.Db(ctx).
+		Raw(
+			"UPDATE users SET login_failed = login_failed + 1 WHERE uuid = ? AND deleted_at IS NULL RETURNING login_failed",
+			userUUID,
+		).
+		Scan(&count)
+
+	if result.Error != nil {
+		return 0, result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		return 0, gorm.ErrRecordNotFound
+	}
+
+	return count, nil
+}
+
+// DeactivateIfActive deactivates a user and reports whether this call did it.
+// Only one of several concurrent callers gets true.
+func (r *repo) DeactivateIfActive(ctx context.Context, userUUID string) (bool, error) {
+	result := r.provider.Db(ctx).
+		Model(&model.User{}).
+		Where("uuid = ? AND active = ?", userUUID, true).
+		Update("active", false)
+
+	if result.Error != nil {
+		return false, result.Error
+	}
+
+	return result.RowsAffected == 1, nil
 }
 
 func (r *repo) UpdateLastLogin(ctx context.Context, userUUID string, timestamp time.Time) error {
