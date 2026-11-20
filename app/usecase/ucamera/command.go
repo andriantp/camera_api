@@ -57,12 +57,9 @@ func (u *usecase) GetPosition(ctx context.Context, actor request.UserActor, came
 }
 
 func (u *usecase) CalibrationMove(ctx context.Context, actor request.UserActor, cameraUUID string, req request.RelativeMove) (*cameraModel.Status, error) {
-	duration, err := time.ParseDuration(req.Duration)
+	duration, err := parseMoveDuration(req.Duration)
 	if err != nil {
-		return nil, response.APIError{
-			StatusCode: http.StatusBadRequest,
-			Message:    "Invalid duration",
-		}
+		return nil, err
 	}
 
 	row, err := u.findCamera(ctx, actor, "CalibrationMove", cameraUUID)
@@ -149,6 +146,14 @@ func (u *usecase) MoveTo(ctx context.Context, actor request.UserActor, cameraUUI
 		return nil, response.APIError{
 			StatusCode: http.StatusConflict,
 			Message:    "PanTilt is not configured",
+		}
+	}
+
+	// Guard against pan-tilts stored before durations were capped.
+	if checkMoveDuration(panTilt.Duration) != nil {
+		return nil, response.APIError{
+			StatusCode: http.StatusConflict,
+			Message:    fmt.Sprintf("PanTilt duration must be greater than 0 and at most %s", maxMoveDuration),
 		}
 	}
 

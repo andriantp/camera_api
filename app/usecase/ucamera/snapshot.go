@@ -28,7 +28,7 @@ func (u *usecase) GetSnapshot(ctx context.Context, actor request.UserActor, came
 		return nil, nil, nil, err
 	}
 
-	filename := now.Format("20060102T150405-0700") + ".png"
+	filename := now.Format("20060102T150405-0700") + ".jpg"
 	msg := fmt.Sprintf(
 		"Snapshot content %s from camera %s",
 		filename,
@@ -59,7 +59,7 @@ func (u *usecase) GetSnapshotS3(ctx context.Context, actor request.UserActor, ca
 	}
 	defer body.Close()
 
-	filename := now.Format("20060102T150405-0700") + ".png"
+	filename := now.Format("20060102T150405-0700") + ".jpg"
 	// Use the UUID from the database, not the raw path parameter, so the
 	// object key is always canonical.
 	objectName := path.Join(canonicalUUID, filename)

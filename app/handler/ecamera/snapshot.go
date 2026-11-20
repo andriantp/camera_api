@@ -43,9 +43,10 @@ func (h *handler) GetSnapshot(c echo.Context) error {
 	defer body.Close()
 
 	res := c.Response()
-	res.Header().Set(echo.HeaderContentType, "image/png")
+	res.Header().Set(echo.HeaderContentType, "image/jpeg")
 
-	if size != nil {
+	// The camera may not send a Content-Length (size -1); stream without it.
+	if size != nil && *size >= 0 {
 		res.Header().Set(
 			echo.HeaderContentLength,
 			strconv.FormatInt(*size, 10),
@@ -59,7 +60,7 @@ func (h *handler) GetSnapshot(c echo.Context) error {
 
 	return c.Stream(
 		http.StatusOK,
-		"image/png",
+		"image/jpeg",
 		body,
 	)
 }

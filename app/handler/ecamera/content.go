@@ -148,7 +148,8 @@ func (h *handler) DownloadContent(c echo.Context) error {
 
 	res := c.Response()
 	res.Header().Set(echo.HeaderContentType, "video/mp4")
-	if size != nil {
+	// The camera may not send a Content-Length (size -1); stream without it.
+	if size != nil && *size >= 0 {
 		res.Header().Set(echo.HeaderContentLength, strconv.FormatInt(*size, 10))
 	}
 	res.Header().Set(echo.HeaderContentDisposition, fmt.Sprintf(`attachment; filename="%s"`, filename))

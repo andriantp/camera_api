@@ -57,12 +57,9 @@ func (u *usecase) GetPanTilts(ctx context.Context) (*response.PanTiltList, error
 }
 
 func (u *usecase) CreatePanTilt(ctx context.Context, actor request.UserActor, req request.CreatePanTilt) (*response.PanTiltSummary, error) {
-	duration, err := time.ParseDuration(req.Duration)
+	duration, err := parseMoveDuration(req.Duration)
 	if err != nil {
-		return nil, response.APIError{
-			StatusCode: http.StatusBadRequest,
-			Message:    "Invalid duration",
-		}
+		return nil, err
 	}
 
 	panTilt := &model.PanTilt{
@@ -163,12 +160,9 @@ func (u *usecase) UpdatePanTilt(ctx context.Context, actor request.UserActor, pa
 	}
 
 	if req.Duration != nil {
-		duration, err := time.ParseDuration(*req.Duration)
+		duration, err := parseMoveDuration(*req.Duration)
 		if err != nil {
-			return response.APIError{
-				StatusCode: http.StatusBadRequest,
-				Message:    "Invalid duration",
-			}
+			return err
 		}
 
 		updates["duration"] = duration

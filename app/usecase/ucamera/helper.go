@@ -97,3 +97,40 @@ func (u *usecase) createActivity(ctx context.Context, now time.Time, actor reque
 
 	return nil
 }
+
+// maxMoveDuration caps how long a relative PTZ move may run. Since
+// andriantp/camera v1.0.7, RelativeMove blocks until the duration elapses,
+// so an unbounded value would hold the HTTP request (and the camera) for
+// that long.
+const maxMoveDuration = 10 * time.Second
+
+// parseMoveDuration parses a move duration such as "500ms" or "3s" and
+// enforces 0 < duration <= maxMoveDuration.
+func parseMoveDuration(value string) (time.Duration, error) {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, response.APIError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "Invalid duration",
+		}
+	}
+
+	if err := checkMoveDuration(duration); err != nil {
+		return 0, err
+	}
+
+	return duration, nil
+}
+
+// checkMoveDuration validates a duration that is already parsed, e.g. one
+// loaded from a stored pan-tilt.
+func checkMoveDuration(duration time.Duration) error {
+	if duration <= 0 || duration > maxMoveDuration {
+		return response.APIError{
+			StatusCode: http.StatusBadRequest,
+			Message:    fmt.Sprintf("Duration must be greater than 0 and at most %s", maxMoveDuration),
+		}
+	}
+
+	return nil
+}

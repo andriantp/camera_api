@@ -30,7 +30,7 @@ func (s *store) Upload(ctx context.Context, contentType, objectName string, size
 
 	switch contentType {
 	case "image":
-		content = "image/png"
+		content = "image/jpeg"
 	case "video":
 		content = "video/mp4"
 	default:
