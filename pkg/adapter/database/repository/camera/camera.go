@@ -23,6 +23,12 @@ type Camera interface {
 	CreateCamera(ctx context.Context, camera *model.Camera) error
 }
 
+// activeAccessJoin joins only access grants that are active and not deleted.
+// Every per-user camera query must use it, so a revoked grant hides the camera
+// everywhere, not just on the detail endpoint.
+const activeAccessJoin = "JOIN camera_access ca ON ca.camera_id = cameras.uuid" +
+	" AND ca.active = TRUE AND ca.deleted_at IS NULL"
+
 func (r *repo) FindCameras(ctx context.Context) ([]model.Camera, error) {
 	var cameras []model.Camera
 
@@ -44,8 +50,9 @@ func (r *repo) FindCamerasByUser(ctx context.Context, userUUID string) ([]model.
 	var cameras []model.Camera
 
 	err := r.provider.Db(ctx).
-		Joins("JOIN camera_access ca ON ca.camera_id = cameras.uuid").
+		Joins(activeAccessJoin).
 		Where("ca.user_id = ?", userUUID).
+		Order("cameras.id ASC").
 		Preload("Protocol").
 		Find(&cameras).Error
 
@@ -99,10 +106,9 @@ func (r *repo) FindCameraAccessUser(ctx context.Context, cameraUUID string, user
 	var camera model.Camera
 
 	err := r.provider.Db(ctx).
-		Joins("JOIN camera_access ca ON ca.camera_id = cameras.uuid").
+		Joins(activeAccessJoin).
 		Where("cameras.uuid = ?", cameraUUID).
 		Where("ca.user_id = ?", userUUID).
-		Where("ca.active = ?", true).
 		Where("cameras.deleted_at IS NULL").
 		Preload("Protocol").
 		Preload("Direction").
@@ -158,7 +164,7 @@ func (r *repo) FindCamerasByProtocolByUser(ctx context.Context, protocolUUID str
 			cameras.active
 		`).
 		Joins("JOIN protocols ON protocols.uuid = cameras.protocol_id").
-		Joins("JOIN camera_access ca ON ca.camera_id = cameras.uuid").
+		Joins(activeAccessJoin).
 		Where("cameras.deleted_at IS NULL").
 		Where("protocols.deleted_at IS NULL").
 		Where("protocols.uuid = ?", protocolUUID).
