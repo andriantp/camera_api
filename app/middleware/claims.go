@@ -9,7 +9,7 @@ import (
 )
 
 func GetClaims(c echo.Context) (*token.CustomClaims, error) {
-	value := c.Get("user")
+	value := c.Get(string(TokenClaims))
 	if value == nil {
 		return nil, response.APIError{
 			StatusCode: http.StatusUnauthorized,

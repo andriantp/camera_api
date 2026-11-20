@@ -159,7 +159,7 @@ func TestAuthMiddlewareWeb(t *testing.T) {
 	req.Header.Set("X-Client-Type", "web")
 
 	req.AddCookie(&http.Cookie{
-		Name:  "access_token",
+		Name:  "access",
 		Value: accessToken,
 	})
 

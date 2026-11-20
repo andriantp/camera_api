@@ -68,7 +68,7 @@ func (m *Middleware) AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		claims.Role = role
 
 		// Store claims in Echo context.
-		c.Set("user", claims)
+		c.Set(string(TokenClaims), claims)
 
 		// if use context with value
 		/*
