@@ -197,6 +197,22 @@ func (u *usecase) DownloadContent(ctx context.Context, actor request.UserActor, 
 }
 
 func (u *usecase) DownloadContentAtS3(ctx context.Context, actor request.UserActor, cameraUUID, filename string) (*response.Download, error) {
+	// Validate the filename before it is used to build the S3 object path.
+	// Only "<start>_<end>[.mp4]" timestamps are accepted, so values such as
+	// "../<other-camera>/<file>" can't reach another camera's objects.
+	start, end, err := helper.ParseContentFilename(filename)
+	if err != nil {
+		logger.Error(
+			"DownloadContentAtS3-ParseContentFilename",
+			fmt.Sprintf("filename[%s]:%s", filename, err.Error()),
+		)
+
+		return nil, response.APIError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "filename is corrupted",
+		}
+	}
+
 	row, err := u.findCamera(ctx, actor, "DownloadContentAtS3", cameraUUID)
 	if err != nil {
 		return nil, err
@@ -209,7 +225,8 @@ func (u *usecase) DownloadContentAtS3(ctx context.Context, actor request.UserAct
 		file, err = u.downloadContentToS3(
 			ctx,
 			row,
-			cameraUUID,
+			start,
+			end,
 			filename,
 			objectName,
 		)
@@ -249,15 +266,7 @@ func (u *usecase) DownloadContentAtS3(ctx context.Context, actor request.UserAct
 	return resp, nil
 }
 
-func (u *usecase) downloadContentToS3(ctx context.Context, row *model.Camera, cameraUUID, filename, objectName string) (*minio.ObjectInfo, error) {
-	start, end, err := helper.ParseContentFilename(filename)
-	if err != nil {
-		return nil, response.APIError{
-			StatusCode: http.StatusBadRequest,
-			Message:    "filename is corrupted",
-		}
-	}
-
+func (u *usecase) downloadContentToS3(ctx context.Context, row *model.Camera, start, end time.Time, filename, objectName string) (*minio.ObjectInfo, error) {
 	target := adaptercamera.CameraTarget{
 		Credential: camera.Credential{
 			Host:     row.Host,

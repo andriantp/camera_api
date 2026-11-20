@@ -23,7 +23,7 @@ type Snapshot interface {
 
 func (u *usecase) GetSnapshot(ctx context.Context, actor request.UserActor, cameraUUID string) (*string, *int64, io.ReadCloser, error) {
 	now := time.Now().UTC()
-	size, body, err := u.getSnapshot(ctx, actor, cameraUUID)
+	_, size, body, err := u.getSnapshot(ctx, actor, cameraUUID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -53,14 +53,16 @@ func (u *usecase) GetSnapshot(ctx context.Context, actor request.UserActor, came
 func (u *usecase) GetSnapshotS3(ctx context.Context, actor request.UserActor, cameraUUID string) (*response.Download, error) {
 	now := time.Now().UTC()
 
-	size, body, err := u.getSnapshot(ctx, actor, cameraUUID)
+	canonicalUUID, size, body, err := u.getSnapshot(ctx, actor, cameraUUID)
 	if err != nil {
 		return nil, err
 	}
 	defer body.Close()
 
 	filename := now.Format("20060102T150405-0700") + ".png"
-	objectName := path.Join(cameraUUID, filename)
+	// Use the UUID from the database, not the raw path parameter, so the
+	// object key is always canonical.
+	objectName := path.Join(canonicalUUID, filename)
 	if err := u.storage.Upload(
 		ctx,
 		"image",
@@ -112,10 +114,11 @@ func (u *usecase) GetSnapshotS3(ctx context.Context, actor request.UserActor, ca
 	return resp, nil
 }
 
-func (u *usecase) getSnapshot(ctx context.Context, actor request.UserActor, cameraUUID string) (*int64, io.ReadCloser, error) {
+// getSnapshot returns the camera's canonical UUID together with the image.
+func (u *usecase) getSnapshot(ctx context.Context, actor request.UserActor, cameraUUID string) (string, *int64, io.ReadCloser, error) {
 	row, err := u.findCamera(ctx, actor, "getSnapshot", cameraUUID)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
 	target := adaptercamera.CameraTarget{
@@ -131,8 +134,8 @@ func (u *usecase) getSnapshot(ctx context.Context, actor request.UserActor, came
 	size, body, err := u.camera.Snapshot(ctx, target, isapi.SnapshotOptions{})
 	if err != nil {
 		logger.Error("getSnapshot-Snapshot", err.Error())
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
-	return size, body, nil
+	return row.UUID.String(), size, body, nil
 }
