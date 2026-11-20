@@ -6,6 +6,7 @@ import (
 	"camera_api/pkg/api/response"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -112,6 +113,53 @@ func (h *handler) AssignCamera(c echo.Context) error {
 		http.StatusOK,
 		response.SuccessResponse(
 			"Camera assigned successfully",
+			nil,
+		),
+	)
+}
+
+// @Summary Revoke camera access
+// @Description Deactivates a user's access to a camera. Assigning the camera again re-enables it.
+// @Tags Camera
+// @Security BearerAuth
+// @Param X-Client-Type header string true "Client type"
+// @Param cameraUUID path string true "Camera UUID"
+// @Param userUUID path string true "User UUID"
+// @Router /camera/{cameraUUID}/access/{userUUID} [delete]
+func (h *handler) RevokeCameraAccess(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	cameraUUID := c.Param("cameraUUID")
+	userUUID := c.Param("userUUID")
+
+	// Reject malformed UUIDs here; PostgreSQL would fail them with a 500.
+	if _, err := uuid.Parse(cameraUUID); err != nil {
+		return response.APIError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid camera UUID",
+		}
+	}
+
+	if _, err := uuid.Parse(userUUID); err != nil {
+		return response.APIError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid user UUID",
+		}
+	}
+
+	actor, err := middleware.GetUserActor(c)
+	if err != nil {
+		return err
+	}
+
+	if err := h.ucaseCamera.RevokeCameraAccess(ctx, *actor, cameraUUID, userUUID); err != nil {
+		return err
+	}
+
+	return c.JSON(
+		http.StatusOK,
+		response.SuccessResponse(
+			"Camera access revoked successfully",
 			nil,
 		),
 	)

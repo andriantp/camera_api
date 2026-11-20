@@ -20,6 +20,7 @@ type Camera interface {
 	GetCamerasByProtocol(ctx context.Context, actor request.UserActor, protocolUUID string) (*response.CameraList, error)
 	GetCameras(ctx context.Context, actor request.UserActor) (*response.CameraList, error)
 	AssignCamera(ctx context.Context, actor request.UserActor, req request.AssignCameraRequest) error
+	RevokeCameraAccess(ctx context.Context, actor request.UserActor, cameraUUID, userUUID string) error
 	GetCamera(ctx context.Context, actor request.UserActor, cameraUUID string) (*response.CameraDetail, error)
 	GetCameraWithCredential(ctx context.Context, cameraUUID string) (*response.CameraDetail, error)
 	CreateCamera(ctx context.Context, actor request.UserActor, req request.CreateCamera) (*string, error)
@@ -209,6 +210,92 @@ func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req
 	})
 	if err != nil {
 		return transactionError("AssignCamera", err, "Camera not found")
+	}
+
+	return nil
+}
+
+// RevokeCameraAccess deactivates a user's grant to a camera. The camera
+// disappears from the user's lists and can no longer be opened; assigning it
+// again re-enables the same grant.
+func (u *usecase) RevokeCameraAccess(ctx context.Context, actor request.UserActor, cameraUUID, userUUID string) error {
+	err := u.repoCamera.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
+		now := time.Now().UTC()
+
+		cam, err := u.repoCamera.FindCameraByUUID(ctxWithTx, cameraUUID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return response.APIError{
+				StatusCode: http.StatusNotFound,
+				Message:    "Camera not found",
+			}
+		}
+		if err != nil {
+			return err
+		}
+
+		access, err := u.repoCamera.FindCameraAccess(ctxWithTx, cameraUUID, userUUID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return response.APIError{
+				StatusCode: http.StatusNotFound,
+				Message:    "Camera access not found",
+			}
+		}
+		if err != nil {
+			return err
+		}
+
+		if !access.Active {
+			return response.APIError{
+				StatusCode: http.StatusConflict,
+				Message:    "Camera access already revoked",
+			}
+		}
+
+		if err := u.repoCamera.DeactivateCameraAccess(ctxWithTx, access.ID); err != nil {
+			return err
+		}
+
+		if err := u.repoUser.UpdateSessionLastSeen(
+			ctxWithTx,
+			actor.SessionID,
+			now,
+			actor.IPAddress,
+			actor.UserAgent,
+		); err != nil {
+			return err
+		}
+
+		// The grant may outlive its user (soft-deleted); fall back to the UUID.
+		username := userUUID
+		if target, err := u.repoUser.FindUserByUserUUID(ctxWithTx, userUUID); err == nil {
+			username = target.UserName
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		msg := fmt.Sprintf(
+			"Revoked access to camera %s (%s) for user %s",
+			cam.SN,
+			cameraUUID,
+			username,
+		)
+
+		activity := model.UserActivity{
+			ActorUserID:  actor.UserID,
+			TargetUserID: &userUUID,
+			SessionID:    &actor.SessionID,
+			CameraID:     &cameraUUID,
+			IPAddress:    actor.IPAddress,
+			UserAgent:    actor.UserAgent,
+			Activity:     "REVOKED_CAMERA",
+			Message:      &msg,
+			CreatedAt:    now,
+		}
+
+		return u.repoUser.CreateActivity(ctxWithTx, &activity)
+	})
+	if err != nil {
+		return transactionError("RevokeCameraAccess", err, "Camera not found")
 	}
 
 	return nil

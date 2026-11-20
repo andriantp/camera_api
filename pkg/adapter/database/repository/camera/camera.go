@@ -18,6 +18,7 @@ type Camera interface {
 	FindCameraAccess(ctx context.Context, cameraUUID string, userUUID string) (*model.CameraAccess, error)
 	CreateCameraAccess(ctx context.Context, access *model.CameraAccess) error
 	ActivateCameraAccess(ctx context.Context, accessID int64) error
+	DeactivateCameraAccess(ctx context.Context, accessID int64) error
 	FindCameraByUUID(ctx context.Context, cameraUUID string) (*model.Camera, error)
 	FindCameraAccessUser(ctx context.Context, cameraUUID string, userUUID string) (*model.Camera, error)
 
@@ -80,6 +81,16 @@ func (r *repo) FindCameraAccess(ctx context.Context, cameraUUID string, userUUID
 
 func (r *repo) CreateCameraAccess(ctx context.Context, access *model.CameraAccess) error {
 	return r.provider.Db(ctx).Create(access).Error
+}
+
+// DeactivateCameraAccess revokes a grant by setting active = false. The row
+// is kept, so AssignCamera can re-enable it later.
+func (r *repo) DeactivateCameraAccess(ctx context.Context, accessID int64) error {
+	return r.provider.Db(ctx).
+		Model(&model.CameraAccess{}).
+		Where("id = ?", accessID).
+		Update("active", false).
+		Error
 }
 
 // ActivateCameraAccess re-enables a revoked (inactive) grant.

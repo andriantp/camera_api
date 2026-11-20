@@ -27,8 +27,9 @@ type fakeAssignCameraRepo struct {
 	accessErr error
 	createErr error
 
-	created   int
-	activated []int64
+	created     int
+	activated   []int64
+	deactivated []int64
 }
 
 func (f *fakeAssignCameraRepo) DoTransaction(ctx context.Context, fn func(context.Context, *gorm.DB) error) error {
@@ -53,6 +54,11 @@ func (f *fakeAssignCameraRepo) CreateCameraAccess(context.Context, *model.Camera
 
 func (f *fakeAssignCameraRepo) ActivateCameraAccess(_ context.Context, id int64) error {
 	f.activated = append(f.activated, id)
+	return nil
+}
+
+func (f *fakeAssignCameraRepo) DeactivateCameraAccess(_ context.Context, id int64) error {
+	f.deactivated = append(f.deactivated, id)
 	return nil
 }
 
