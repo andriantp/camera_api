@@ -1,0 +1,28 @@
+# VCS
+.git/
+.gitignore
+.dockerignore
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+docs/vault.*.json
+
+# Local data & deploy files
+postgres/
+docker/docker-compose.yml
+
+# Go
+bin/
+*.test
+coverage.out
+coverage.html
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+*.log

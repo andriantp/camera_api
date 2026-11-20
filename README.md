@@ -55,6 +55,28 @@ HOST=<vault-host>
 TOKEN=<vault-token>
 ```
 
+The application settings themselves are stored as a JSON secret in Vault at:
+
+```text
+<PRODUCT>/data/<ENV>/<FILE>    # e.g. camera/data/development/api
+```
+
+Use [`docs/vault.example.json`](docs/vault.example.json) as a template. All values in it are dummies — replace them before use.
+
+| Section | Field | Description |
+|---|---|---|
+| `general` | `core` | `GOMAXPROCS` value (`0` = use all CPUs) |
+| `general` | `log` | `panic`, `fatal`, `error`, `warning`, `info`, `debug`, `trace` |
+| `server` | `readTimeout` | seconds |
+| `server` | `writeTimeout`, `idleTimeout` | minutes |
+| `server` | `jWTEXPToken` | access token lifetime, minutes |
+| `server` | `jWTEXPRefresh` | refresh token lifetime, hours |
+| `server` | `trustProxy` | `true` only when running behind a reverse proxy (nginx, Traefik). Reads the client IP from `X-Forwarded-For`, trusted only from loopback/private networks |
+| `camera` | `timeout` | camera request timeout, seconds |
+| `camera` | `download` | content download timeout, minutes |
+| `camera` | `key` | base64-encoded 32-byte key used to encrypt camera credentials. Generate with `openssl rand -base64 32`. Changing it makes stored credentials unreadable |
+| `s3` | `expire` | presigned download URL lifetime, minutes |
+
 Do not commit real credentials or tokens.
 
 ## Run

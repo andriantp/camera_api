@@ -19,8 +19,9 @@ coverage.html
 # Logs
 *.log
 
-## Swagger
-docs
+## Swagger & local vault configs
+docs/*
+!docs/vault.example.json
 
 # Database
 /postgres
