@@ -156,8 +156,8 @@ func (h *handler) parseActivityFilter(c echo.Context) (request.Pagination, error
 			}
 		}
 
-		if limit > 100 {
-			limit = 100
+		if limit > maxListLimit {
+			limit = maxListLimit
 		}
 
 		filter.Limit = limit

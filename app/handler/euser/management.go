@@ -10,6 +10,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// maxListLimit caps page sizes so one request can't load the whole table.
+const maxListLimit = 100
+
 // @Summary Get users
 // @Tags User Management
 // @Security BearerAuth
@@ -25,6 +28,11 @@ func (h *handler) GetUsers(c echo.Context) error {
 	limit, err := strconv.Atoi(c.QueryParam("limit"))
 	if err != nil || limit <= 0 {
 		limit = 20
+	}
+
+	// Same cap as the activity and content listings.
+	if limit > maxListLimit {
+		limit = maxListLimit
 	}
 
 	offset, err := strconv.Atoi(c.QueryParam("offset"))
