@@ -48,7 +48,9 @@ func NewPostgres(setting Setting) (Database, error) {
 	db, err := gorm.Open(
 		postgres.Open(setting.DSN),
 		&gorm.Config{
-			Logger: newLogger,
+			// Map driver errors such as unique violations to gorm.ErrDuplicatedKey.
+			TranslateError: true,
+			Logger:         newLogger,
 			NowFunc: func() time.Time {
 				return time.Now().UTC()
 			},

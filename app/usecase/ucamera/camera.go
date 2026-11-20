@@ -98,46 +98,81 @@ func (u *usecase) GetCameras(ctx context.Context, actor request.UserActor) (*res
 }
 
 func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req request.AssignCameraRequest) error {
-	return u.repoCamera.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
+	err := u.repoCamera.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
 		now := time.Now().UTC()
 
-		access, err := u.repoCamera.FindCameraAccess(
-			ctxWithTx,
-			req.CameraUUID,
-			req.UserUUID,
-		)
+		cam, err := u.repoCamera.FindCameraByUUID(ctxWithTx, req.CameraUUID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return response.APIError{
+				StatusCode: http.StatusNotFound,
+				Message:    "Camera not found",
+			}
+		}
+		if err != nil {
+			return err
+		}
 
-		if err == nil && access != nil {
+		target, err := u.repoUser.FindUserByUserUUID(ctxWithTx, req.UserUUID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return response.APIError{
+				StatusCode: http.StatusNotFound,
+				Message:    "User not found",
+			}
+		}
+		if err != nil {
+			return err
+		}
+
+		// super_admin and admin already see every camera; a grant for them
+		// would have no effect.
+		if bypassesCameraAccess(target.RoleName) {
+			return response.APIError{
+				StatusCode: http.StatusBadRequest,
+				Message:    "Camera access can only be assigned to operator or user",
+			}
+		}
+
+		action := "Assigned"
+
+		access, err := u.repoCamera.FindCameraAccess(ctxWithTx, req.CameraUUID, req.UserUUID)
+		switch {
+		case err == nil && access.Active:
 			return response.APIError{
 				StatusCode: http.StatusConflict,
 				Message:    "Camera already assigned to user",
 			}
-		}
 
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			logger.Error("AssignCamera-FindCameraAccess", err.Error())
-
-			return response.APIError{
-				StatusCode: http.StatusInternalServerError,
-				Message:    "Internal server error",
+		case err == nil:
+			// A revoked grant exists: re-enable it instead of adding a row.
+			if err := u.repoCamera.ActivateCameraAccess(ctxWithTx, access.ID); err != nil {
+				return err
 			}
-		}
 
-		if err := u.repoCamera.CreateCameraAccess(
-			ctxWithTx,
-			&model.CameraAccess{
-				CameraID:  req.CameraUUID,
-				UserID:    req.UserUUID,
-				CreatedBy: actor.UserID,
-				Active:    true,
-			},
-		); err != nil {
-			logger.Error("AssignCamera-CreateCameraAccess", err.Error())
+			action = "Reactivated"
 
-			return response.APIError{
-				StatusCode: http.StatusInternalServerError,
-				Message:    "Internal server error",
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			err := u.repoCamera.CreateCameraAccess(
+				ctxWithTx,
+				&model.CameraAccess{
+					CameraID:  req.CameraUUID,
+					UserID:    req.UserUUID,
+					CreatedBy: actor.UserID,
+					Active:    true,
+				},
+			)
+			// A concurrent request created the same grant first.
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				return response.APIError{
+					StatusCode: http.StatusConflict,
+					Message:    "Camera already assigned to user",
+				}
 			}
+			if err != nil {
+				return err
+			}
+
+		default:
+			return err
 		}
 
 		if err := u.repoUser.UpdateSessionLastSeen(
@@ -150,21 +185,33 @@ func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req
 			return err
 		}
 
-		msg := fmt.Sprintf("Assigned camera %s", req.CameraUUID)
+		msg := fmt.Sprintf(
+			"%s access to camera %s (%s) for user %s",
+			action,
+			cam.SN,
+			req.CameraUUID,
+			target.UserName,
+		)
 
 		activity := model.UserActivity{
-			ActorUserID: actor.UserID,
-			SessionID:   &actor.SessionID,
-			CameraID:    &req.CameraUUID,
-			IPAddress:   actor.IPAddress,
-			UserAgent:   actor.UserAgent,
-			Activity:    "ASSIGNED_CAMERA",
-			Message:     &msg,
-			CreatedAt:   now,
+			ActorUserID:  actor.UserID,
+			TargetUserID: &req.UserUUID,
+			SessionID:    &actor.SessionID,
+			CameraID:     &req.CameraUUID,
+			IPAddress:    actor.IPAddress,
+			UserAgent:    actor.UserAgent,
+			Activity:     "ASSIGNED_CAMERA",
+			Message:      &msg,
+			CreatedAt:    now,
 		}
 
 		return u.repoUser.CreateActivity(ctxWithTx, &activity)
 	})
+	if err != nil {
+		return transactionError("AssignCamera", err, "Camera not found")
+	}
+
+	return nil
 }
 
 func (u *usecase) GetCamera(ctx context.Context, actor request.UserActor, cameraUUID string) (*response.CameraDetail, error) {
