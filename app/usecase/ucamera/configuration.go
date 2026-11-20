@@ -61,19 +61,7 @@ func (u *usecase) UpdateCameraSN(ctx context.Context, actor request.UserActor, c
 	})
 
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return response.APIError{
-				StatusCode: http.StatusNotFound,
-				Message:    "Camera not found",
-			}
-		}
-
-		logger.Error("UpdateCameraSN-Transaction", err.Error())
-
-		return response.APIError{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "Internal server error",
-		}
+		return transactionError("UpdateCameraSN", err, "Camera not found")
 	}
 
 	return nil
@@ -123,19 +111,7 @@ func (u *usecase) UpdateCameraStatus(ctx context.Context, actor request.UserActo
 	})
 
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return response.APIError{
-				StatusCode: http.StatusNotFound,
-				Message:    "Camera not found",
-			}
-		}
-
-		logger.Error("UpdateCameraStatus-Transaction", err.Error())
-
-		return response.APIError{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "Internal server error",
-		}
+		return transactionError("UpdateCameraStatus", err, "Camera not found")
 	}
 
 	return nil
@@ -145,12 +121,9 @@ func (u *usecase) UpdateCameraCredential(ctx context.Context, actor request.User
 	err := u.repoUser.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
 		now := time.Now().UTC()
 
-		_, err := u.findCamera(ctxWithTx, actor, "UpdateCameraCredential", cameraUUID)
-		if err != nil {
-			return err
-		}
-
-		row, err := u.repoCamera.FindCameraByUUID(ctxWithTx, cameraUUID)
+		// findCamera already loads the full camera row (including the
+		// encrypted credential) and checks the actor's access to it.
+		row, err := u.findCamera(ctxWithTx, actor, "UpdateCameraCredential", cameraUUID)
 		if err != nil {
 			return err
 		}
@@ -215,19 +188,7 @@ func (u *usecase) UpdateCameraCredential(ctx context.Context, actor request.User
 	})
 
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return response.APIError{
-				StatusCode: http.StatusNotFound,
-				Message:    "Camera not found",
-			}
-		}
-
-		logger.Error("UpdateCameraCredential-Transaction", err.Error())
-
-		return response.APIError{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "Internal server error",
-		}
+		return transactionError("UpdateCameraCredential", err, "Camera not found")
 	}
 
 	return nil
@@ -237,12 +198,12 @@ func (u *usecase) UpdateCameraDirection(ctx context.Context, actor request.UserA
 	err := u.repoUser.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
 		now := time.Now().UTC()
 
-		_, err := u.findCamera(ctxWithTx, actor, "UpdateChannel", cameraUUID)
+		_, err := u.findCamera(ctxWithTx, actor, "UpdateCameraDirection", cameraUUID)
 		if err != nil {
 			return err
 		}
 
-		direction, err := u.repoCamera.GetDirectionByUUID(ctx, req.Direction)
+		direction, err := u.repoCamera.GetDirectionByUUID(ctxWithTx, req.Direction)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return response.APIError{
@@ -284,12 +245,7 @@ func (u *usecase) UpdateCameraDirection(ctx context.Context, actor request.UserA
 	})
 
 	if err != nil {
-		logger.Error("UpdateCameraDirection-Transaction", err.Error())
-
-		return response.APIError{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "Internal server error",
-		}
+		return transactionError("UpdateCameraDirection", err, "Camera not found")
 	}
 
 	return nil
@@ -453,25 +409,7 @@ func (u *usecase) UpdateConfiguration(ctx context.Context, actor request.UserAct
 	})
 
 	if err != nil {
-		var apiErr response.APIError
-
-		if errors.As(err, &apiErr) {
-			return apiErr
-		}
-
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return response.APIError{
-				StatusCode: http.StatusNotFound,
-				Message:    "Camera not found",
-			}
-		}
-
-		logger.Error("UpdateConfiguration-Transaction", err.Error())
-
-		return response.APIError{
-			StatusCode: http.StatusInternalServerError,
-			Message:    "Internal server error",
-		}
+		return transactionError("UpdateConfiguration", err, "Camera not found")
 	}
 
 	return nil

@@ -134,3 +134,28 @@ func checkMoveDuration(duration time.Duration) error {
 
 	return nil
 }
+
+// transactionError maps an error returned from a transaction to an API error:
+// APIErrors raised inside the transaction (e.g. 404 from findCamera) pass
+// through unchanged, gorm.ErrRecordNotFound becomes 404 with notFoundMessage,
+// and anything else is logged and becomes 500.
+func transactionError(operation string, err error, notFoundMessage string) error {
+	var apiErr response.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr
+	}
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return response.APIError{
+			StatusCode: http.StatusNotFound,
+			Message:    notFoundMessage,
+		}
+	}
+
+	logger.Error(operation+"-Transaction", err.Error())
+
+	return response.APIError{
+		StatusCode: http.StatusInternalServerError,
+		Message:    "Internal server error",
+	}
+}
