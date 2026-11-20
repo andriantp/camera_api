@@ -34,6 +34,14 @@ func (u *usecase) GetUsers(ctx context.Context, actor request.UserActor, limit, 
 			Message:    "Role not found",
 		}
 	}
+	if err != nil {
+		logger.Error("GetUsers-FindActorRole", err.Error())
+
+		return nil, response.APIError{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Internal server error",
+		}
+	}
 
 	users, err := u.repoUser.FindUsers(ctx, int(actorRole.ID), limit, offset)
 	if err != nil {
@@ -69,8 +77,15 @@ func (u *usecase) GetUsers(ctx context.Context, actor request.UserActor, limit, 
 		result = append(result, item)
 	}
 
+	// Total comes from COUNT(*) OVER() on every row; an empty page (e.g. an
+	// offset past the last user) has no rows, so the total is unknown here.
+	total := 0
+	if len(users) > 0 {
+		total = users[0].Total
+	}
+
 	return &response.UserList{
-		Total:    users[0].Total,
+		Total:    total,
 		Returned: len(result),
 		Users:    result,
 	}, nil
@@ -82,6 +97,14 @@ func (u *usecase) GetRoles(ctx context.Context, actor request.UserActor) (*respo
 		return nil, response.APIError{
 			StatusCode: http.StatusForbidden,
 			Message:    "Role not found",
+		}
+	}
+	if err != nil {
+		logger.Error("GetRoles-FindActorRole", err.Error())
+
+		return nil, response.APIError{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Internal server error",
 		}
 	}
 
@@ -234,6 +257,14 @@ func (u *usecase) GetUserProfile(ctx context.Context, actor request.UserActor, u
 		return nil, response.APIError{
 			StatusCode: http.StatusForbidden,
 			Message:    "Role not found",
+		}
+	}
+	if err != nil {
+		logger.Error("GetUserProfile-FindActorRole", err.Error())
+
+		return nil, response.APIError{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Internal server error",
 		}
 	}
 
