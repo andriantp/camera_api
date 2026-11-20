@@ -134,6 +134,11 @@ func (u *usecase) ChangeMyPassword(ctx context.Context, actor request.UserActor,
 			return err
 		}
 
+		// Log out other devices; keep the session that changed the password.
+		if err := u.repoUser.RevokeUserSessions(ctxWithTx, actor.UserID, now, actor.SessionID); err != nil {
+			return err
+		}
+
 		if err := u.repoUser.UpdateSessionLastSeen(ctxWithTx, actor.SessionID, now, actor.IPAddress, actor.UserAgent); err != nil {
 			return err
 		}

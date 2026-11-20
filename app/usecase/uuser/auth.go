@@ -20,6 +20,29 @@ type Auth interface {
 	Login(ctx context.Context, body request.Login) (*string, *string, error)
 	Logout(ctx context.Context, actor request.UserActor) error
 	Refresh(ctx context.Context, refreshToken string, actor request.UserActor) (*string, *string, error)
+	ValidateSession(ctx context.Context, sessionUUID, userUUID string) (string, error)
+}
+
+// ValidateSession checks that a session is still usable and returns the
+// user's current role name. It is called by AuthMiddleware on every request.
+func (u *usecase) ValidateSession(ctx context.Context, sessionUUID, userUUID string) (string, error) {
+	session, err := u.repoUser.FindActiveSession(ctx, sessionUUID, userUUID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", response.APIError{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "Unauthorized",
+		}
+	}
+	if err != nil {
+		logger.Error("ValidateSession-FindActiveSession", err.Error())
+
+		return "", response.APIError{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Internal server error",
+		}
+	}
+
+	return session.RoleName, nil
 }
 
 func (u *usecase) GetExpire() Expire {
@@ -66,6 +89,10 @@ func (u *usecase) Login(ctx context.Context, body request.Login) (*string, *stri
 			}
 
 			if err := u.repoUser.UpdateStatus(ctxWithTx, user.UserUUID, false); err != nil {
+				return err
+			}
+
+			if err := u.repoUser.RevokeUserSessions(ctxWithTx, user.UserUUID, time.Now().UTC(), ""); err != nil {
 				return err
 			}
 
@@ -187,6 +214,23 @@ func (u *usecase) Refresh(ctx context.Context, refreshToken string, actor reques
 		return nil, nil, response.APIError{
 			StatusCode: http.StatusUnauthorized,
 			Message:    "Invalid refresh token",
+		}
+	}
+
+	// Reject refresh tokens of sessions that were logged out or revoked.
+	_, err = u.repoUser.FindActiveSession(ctx, body.Session, body.User)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, response.APIError{
+			StatusCode: http.StatusUnauthorized,
+			Message:    "Invalid refresh token",
+		}
+	}
+	if err != nil {
+		logger.Error("Refresh-FindActiveSession", err.Error())
+
+		return nil, nil, response.APIError{
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Internal server error",
 		}
 	}
 

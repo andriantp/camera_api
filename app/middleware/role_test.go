@@ -13,7 +13,7 @@ import (
 
 func TestRoleMiddlewareAllowed(t *testing.T) {
 	e := echo.New()
-	m := middleware.NewMiddleware(token.Token{})
+	m := middleware.NewMiddleware(token.Token{}, nil)
 
 	nextCalled := false
 
@@ -61,7 +61,7 @@ func TestRoleMiddlewareAllowed(t *testing.T) {
 
 func TestRoleMiddlewareForbidden(t *testing.T) {
 	e := echo.New()
-	m := middleware.NewMiddleware(token.Token{})
+	m := middleware.NewMiddleware(token.Token{}, nil)
 
 	nextCalled := false
 
