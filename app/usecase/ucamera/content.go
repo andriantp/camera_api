@@ -27,14 +27,36 @@ type Content interface {
 	DownloadContentAtS3(ctx context.Context, actor request.UserActor, cameraUUID, filename string) (*response.Download, error)
 }
 
+// defaultContentSearchWindow is used when "from" is not given: the camera
+// requires both bounds, so search the 24 hours that end at "to".
+const defaultContentSearchWindow = 24 * time.Hour
+
 func (u *usecase) GetContents(ctx context.Context, actor request.UserActor, cameraUUID string, req request.SearchContent) (*adaptercamera.Playlist, error) {
-	start, end, loc, err := helper.ConvertTime(req.From, req.To)
+	start, end, loc, err := helper.ConvertTimeRange(req.From, req.To)
 	if err != nil {
-		logger.Error("GetContents-ConvertTime", err.Error())
+		logger.Error("GetContents-ConvertTimeRange", err.Error())
 		return nil, err
 	}
-	req.From = *start
-	req.To = *end
+
+	// ISAPI search needs both bounds; fill in the missing ones.
+	if end.IsZero() {
+		end = time.Now().UTC()
+	}
+
+	if start.IsZero() {
+		start = end.Add(-defaultContentSearchWindow)
+	}
+
+	// Possible when only a future "from" is given (end defaults to now).
+	if start.After(end) {
+		return nil, response.APIError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "from must not be after to",
+		}
+	}
+
+	req.From = start
+	req.To = end
 
 	row, err := u.findCamera(ctx, actor, "GetContents", cameraUUID)
 	if err != nil {

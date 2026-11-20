@@ -17,8 +17,8 @@ import (
 // @Security BearerAuth
 // @Param X-Client-Type header string true "Client type"
 // @Param cameraUUID path string true "Camera UUID"
-// @Param from query string false "Start date (RFC3339, timezone-aware)" example(2026-08-18T00:00:00+07:00)
-// @Param to query string false "End date (RFC3339, timezone-aware)" example(2026-08-18T23:59:59+07:00)
+// @Param from query string false "Start date (RFC3339, timezone-aware). Default: 24 hours before 'to'" example(2026-08-18T00:00:00+07:00)
+// @Param to query string false "End date (RFC3339, timezone-aware). Default: now" example(2026-08-18T23:59:59+07:00)
 // @Param limit query string false "Limit"
 // @Param offset query string false "Offset"
 // @Router /camera/{cameraUUID}/content [get]
