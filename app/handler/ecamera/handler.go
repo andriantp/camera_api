@@ -30,7 +30,7 @@ func NewHandler(
 		10,
 		time.Minute,
 		func(c echo.Context) string {
-			return "camera:" + c.Param("uuid")
+			return "camera:" + c.Param("cameraUUID")
 		},
 	)
 
@@ -64,7 +64,7 @@ func NewHandler(
 		10,
 		time.Second,
 		func(c echo.Context) string {
-			return "camera:" + c.Param("uuid")
+			return "camera:" + c.Param("cameraUUID")
 		},
 	)
 

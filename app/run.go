@@ -79,6 +79,17 @@ func (a *appStruct) Run(ctx context.Context) error {
 	e.HideBanner = true
 	e.HidePort = true
 
+	// Client IP extraction (used by rate limiter, sessions and activity logs).
+	// Without an explicit extractor, c.RealIP() trusts X-Forwarded-For from
+	// anyone, which lets clients bypass IP-based rate limits.
+	if a.setting.Server.TrustProxy {
+		// Only trusts XFF hops from loopback/link-local/private ranges.
+		e.IPExtractor = echo.ExtractIPFromXFFHeader()
+	} else {
+		e.IPExtractor = echo.ExtractIPDirect()
+	}
+	logger.Info("Run", fmt.Sprintf("trust_proxy:%v", a.setting.Server.TrustProxy))
+
 	logger.Info("Run", fmt.Sprintf("swagger:%v", a.setting.Server.Swagger))
 	if a.setting.Server.Swagger {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)

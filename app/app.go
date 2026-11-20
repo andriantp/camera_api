@@ -30,6 +30,10 @@ type (
 		Cors          bool
 		AllowOrigins  []string
 		Swagger       bool
+		// TrustProxy enables reading the client IP from X-Forwarded-For.
+		// Only enable it when the API sits behind a reverse proxy on a
+		// private/loopback network; otherwise clients can spoof their IP.
+		TrustProxy bool
 	}
 )
 
