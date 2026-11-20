@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -16,6 +17,50 @@ import (
 type Setting struct {
 	Migrate bool
 	DSN     string
+
+	// Connection pool. Zero values fall back to the defaults below.
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
+}
+
+// Pool defaults: bounded so a traffic spike can't exhaust PostgreSQL's
+// max_connections, and recycled so connections don't live forever (e.g.
+// across a database failover or behind a proxy that drops idle links).
+const (
+	defaultMaxOpenConns    = 25
+	defaultMaxIdleConns    = 10
+	defaultConnMaxLifetime = 30 * time.Minute
+	defaultConnMaxIdleTime = 5 * time.Minute
+
+	pingTimeout = 5 * time.Second
+)
+
+// withPoolDefaults fills unset pool settings with the defaults.
+func (s Setting) withPoolDefaults() Setting {
+	if s.MaxOpenConns <= 0 {
+		s.MaxOpenConns = defaultMaxOpenConns
+	}
+
+	if s.MaxIdleConns <= 0 {
+		s.MaxIdleConns = defaultMaxIdleConns
+	}
+
+	// Idle connections above the open limit would never be used.
+	if s.MaxIdleConns > s.MaxOpenConns {
+		s.MaxIdleConns = s.MaxOpenConns
+	}
+
+	if s.ConnMaxLifetime <= 0 {
+		s.ConnMaxLifetime = defaultConnMaxLifetime
+	}
+
+	if s.ConnMaxIdleTime <= 0 {
+		s.ConnMaxIdleTime = defaultConnMaxIdleTime
+	}
+
+	return s
 }
 
 type postgresDB struct {
@@ -58,6 +103,25 @@ func NewPostgres(setting Setting) (Database, error) {
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get sql.DB: %w", err)
+	}
+
+	pool := setting.withPoolDefaults()
+	sqlDB.SetMaxOpenConns(pool.MaxOpenConns)
+	sqlDB.SetMaxIdleConns(pool.MaxIdleConns)
+	sqlDB.SetConnMaxLifetime(pool.ConnMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(pool.ConnMaxIdleTime)
+
+	// Fail fast at startup if the database is unreachable.
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+	defer cancel()
+
+	if err := sqlDB.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
 	if setting.Migrate {

@@ -38,6 +38,11 @@ type Database struct {
 	User     string
 	Password string
 	Name     string
+
+	// Optional pool settings; 0 keeps the defaults in the postgres package.
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration // minutes
 }
 
 type Token struct {
@@ -134,8 +139,11 @@ func ReadVault(s HashiCorp) (*Setting, *app.Setting, error) {
 		},
 
 		Database: postgres.Setting{
-			Migrate: setting.Database.Migrate,
-			DSN:     dsn,
+			Migrate:         setting.Database.Migrate,
+			DSN:             dsn,
+			MaxOpenConns:    setting.Database.MaxOpenConns,
+			MaxIdleConns:    setting.Database.MaxIdleConns,
+			ConnMaxLifetime: setting.Database.ConnMaxLifetime * time.Minute,
 		},
 
 		Server: app.Server{

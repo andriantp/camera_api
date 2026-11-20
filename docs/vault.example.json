@@ -9,7 +9,10 @@
     "port": 5432,
     "user": "camera_user",
     "password": "change-me",
-    "name": "camera"
+    "name": "camera",
+    "maxOpenConns": 25,
+    "maxIdleConns": 10,
+    "connMaxLifetime": 30
   },
   "server": {
     "port": 8085,

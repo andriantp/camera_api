@@ -67,6 +67,8 @@ Use [`docs/vault.example.json`](docs/vault.example.json) as a template. All valu
 |---|---|---|
 | `general` | `core` | `GOMAXPROCS` value (`0` = use all CPUs) |
 | `general` | `log` | `panic`, `fatal`, `error`, `warning`, `info`, `debug`, `trace` |
+| `database` | `maxOpenConns`, `maxIdleConns` | connection pool size, optional (default `25` / `10`) |
+| `database` | `connMaxLifetime` | minutes before a connection is recycled, optional (default `30`) |
 | `server` | `readTimeout` | seconds |
 | `server` | `writeTimeout`, `idleTimeout` | minutes |
 | `server` | `jWTEXPToken` | access token lifetime, minutes |

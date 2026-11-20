@@ -42,4 +42,24 @@ func TestNewPostgres(t *testing.T) {
 	if one != 1 {
 		t.Fatalf("SELECT 1 returned %d", one)
 	}
+
+	sqlDB, err := db.Db(context.Background()).DB()
+	if err != nil {
+		t.Fatalf("sql.DB: %v", err)
+	}
+
+	if got := sqlDB.Stats().MaxOpenConnections; got != 25 {
+		t.Fatalf("MaxOpenConnections = %d, want the default 25", got)
+	}
+}
+
+func TestNewPostgresUnreachable(t *testing.T) {
+	// Nothing listens on port 1: startup must fail fast instead of returning
+	// a handle that errors on first use.
+	_, err := postgres.NewPostgres(postgres.Setting{
+		DSN: "host=127.0.0.1 port=1 user=x password=x dbname=x sslmode=disable connect_timeout=2",
+	})
+	if err == nil {
+		t.Fatal("expected an error for an unreachable database")
+	}
 }
