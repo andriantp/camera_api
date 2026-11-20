@@ -19,8 +19,13 @@ type Camera interface {
 	CreateCameraAccess(ctx context.Context, access *model.CameraAccess) error
 	ActivateCameraAccess(ctx context.Context, accessID int64) error
 	DeactivateCameraAccess(ctx context.Context, accessID int64) error
+	// FindCameraByUUID and FindCameraAccessUser load the camera and its
+	// protocol in one query; enough for every camera action. The Detail
+	// variants also load the direction and its pan-tilts (6 more queries).
 	FindCameraByUUID(ctx context.Context, cameraUUID string) (*model.Camera, error)
+	FindCameraDetailByUUID(ctx context.Context, cameraUUID string) (*model.Camera, error)
 	FindCameraAccessUser(ctx context.Context, cameraUUID string, userUUID string) (*model.Camera, error)
+	FindCameraAccessUserDetail(ctx context.Context, cameraUUID string, userUUID string) (*model.Camera, error)
 
 	CreateCamera(ctx context.Context, camera *model.Camera) error
 }
@@ -100,51 +105,6 @@ func (r *repo) ActivateCameraAccess(ctx context.Context, accessID int64) error {
 		Where("id = ?", accessID).
 		Update("active", true).
 		Error
-}
-
-func (r *repo) FindCameraByUUID(ctx context.Context, cameraUUID string) (*model.Camera, error) {
-	var camera model.Camera
-
-	err := r.provider.Db(ctx).
-		Where("uuid = ? AND deleted_at IS NULL", cameraUUID).
-		Preload("Protocol").
-		Preload("Direction").
-		Preload("Direction.Left").
-		Preload("Direction.Right").
-		Preload("Direction.Up").
-		Preload("Direction.Down").
-		First(&camera).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &camera, nil
-}
-
-func (r *repo) FindCameraAccessUser(ctx context.Context, cameraUUID string, userUUID string) (*model.Camera, error) {
-	var camera model.Camera
-
-	err := r.provider.Db(ctx).
-		Joins(activeAccessJoin).
-		Where("cameras.uuid = ?", cameraUUID).
-		Where("ca.user_id = ?", userUUID).
-		Where("cameras.deleted_at IS NULL").
-		Preload("Protocol").
-		Preload("Direction").
-		Preload("Direction.Left").
-		Preload("Direction.Right").
-		Preload("Direction.Up").
-		Preload("Direction.Down").
-		First(&camera).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &camera, nil
 }
 
 func (r *repo) FindCamerasByProtocol(ctx context.Context, protocolUUID string) ([]model.CameraSummary, error) {
@@ -311,4 +271,52 @@ func (r *repo) UpdateCameraDirection(ctx context.Context, cameraUUID, directionU
 	}
 
 	return nil
+}
+
+func (r *repo) FindCameraByUUID(ctx context.Context, cameraUUID string) (*model.Camera, error) {
+	return r.findCamera(ctx, cameraUUID, "", false)
+}
+
+func (r *repo) FindCameraDetailByUUID(ctx context.Context, cameraUUID string) (*model.Camera, error) {
+	return r.findCamera(ctx, cameraUUID, "", true)
+}
+
+func (r *repo) FindCameraAccessUser(ctx context.Context, cameraUUID string, userUUID string) (*model.Camera, error) {
+	return r.findCamera(ctx, cameraUUID, userUUID, false)
+}
+
+func (r *repo) FindCameraAccessUserDetail(ctx context.Context, cameraUUID string, userUUID string) (*model.Camera, error) {
+	return r.findCamera(ctx, cameraUUID, userUUID, true)
+}
+
+// findCamera loads one live camera with its protocol (joined, one query).
+// With userUUID it also requires an active access grant for that user. With
+// detail it preloads the direction and its four pan-tilts.
+func (r *repo) findCamera(ctx context.Context, cameraUUID, userUUID string, detail bool) (*model.Camera, error) {
+	query := r.provider.Db(ctx).
+		Joins("Protocol").
+		Where("cameras.uuid = ?", cameraUUID).
+		Where("cameras.deleted_at IS NULL")
+
+	if userUUID != "" {
+		query = query.
+			Joins(activeAccessJoin).
+			Where("ca.user_id = ?", userUUID)
+	}
+
+	if detail {
+		query = query.
+			Preload("Direction").
+			Preload("Direction.Left").
+			Preload("Direction.Right").
+			Preload("Direction.Up").
+			Preload("Direction.Down")
+	}
+
+	var camera model.Camera
+	if err := query.First(&camera).Error; err != nil {
+		return nil, err
+	}
+
+	return &camera, nil
 }

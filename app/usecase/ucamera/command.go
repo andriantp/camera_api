@@ -113,7 +113,7 @@ func (u *usecase) CalibrationMove(ctx context.Context, actor request.UserActor, 
 }
 
 func (u *usecase) MoveTo(ctx context.Context, actor request.UserActor, cameraUUID string, direction string) (*cameraModel.Status, error) {
-	row, err := u.findCamera(ctx, actor, "MoveTo", cameraUUID)
+	row, err := u.findCameraDetail(ctx, actor, "MoveTo", cameraUUID)
 	if err != nil {
 		return nil, err
 	}

@@ -304,7 +304,7 @@ func (u *usecase) RevokeCameraAccess(ctx context.Context, actor request.UserActo
 }
 
 func (u *usecase) GetCamera(ctx context.Context, actor request.UserActor, cameraUUID string) (*response.CameraDetail, error) {
-	camera, err := u.findCamera(ctx, actor, "GetCamera", cameraUUID)
+	camera, err := u.findCameraDetail(ctx, actor, "GetCamera", cameraUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -344,7 +344,7 @@ func (u *usecase) GetCamera(ctx context.Context, actor request.UserActor, camera
 }
 
 func (u *usecase) GetCameraWithCredential(ctx context.Context, cameraUUID string) (*response.CameraDetail, error) {
-	row, err := u.repoCamera.FindCameraByUUID(ctx, cameraUUID)
+	row, err := u.repoCamera.FindCameraDetailByUUID(ctx, cameraUUID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, response.APIError{

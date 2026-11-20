@@ -16,18 +16,38 @@ import (
 type fakeAccessRepo struct {
 	repocamera.Repository
 
-	calls  []string
-	grants int
+	calls   []string
+	details []bool
+	grants  int
+	camera  *model.Camera
+}
+
+func (f *fakeAccessRepo) found() *model.Camera {
+	if f.camera != nil {
+		return f.camera
+	}
+
+	return &model.Camera{UUID: uuid.New()}
 }
 
 func (f *fakeAccessRepo) FindCameraByUUID(context.Context, string) (*model.Camera, error) {
-	f.calls = append(f.calls, "all")
-	return &model.Camera{UUID: uuid.New()}, nil
+	f.calls, f.details = append(f.calls, "all"), append(f.details, false)
+	return f.found(), nil
+}
+
+func (f *fakeAccessRepo) FindCameraDetailByUUID(context.Context, string) (*model.Camera, error) {
+	f.calls, f.details = append(f.calls, "all"), append(f.details, true)
+	return f.found(), nil
 }
 
 func (f *fakeAccessRepo) FindCameraAccessUser(context.Context, string, string) (*model.Camera, error) {
-	f.calls = append(f.calls, "granted")
-	return &model.Camera{UUID: uuid.New()}, nil
+	f.calls, f.details = append(f.calls, "granted"), append(f.details, false)
+	return f.found(), nil
+}
+
+func (f *fakeAccessRepo) FindCameraAccessUserDetail(context.Context, string, string) (*model.Camera, error) {
+	f.calls, f.details = append(f.calls, "granted"), append(f.details, true)
+	return f.found(), nil
 }
 
 func (f *fakeAccessRepo) FindCameras(context.Context) ([]model.Camera, error) {
@@ -145,5 +165,45 @@ func TestCreateCameraGrantsAccessOnlyToRestrictedRoles(t *testing.T) {
 				t.Fatalf("access grants = %d, want %d", repo.grants, wantGrants)
 			}
 		})
+	}
+}
+
+// TestOnlyDetailEndpointsLoadDirection guards the query budget: only the
+// endpoints that use the direction may load it (6 extra queries).
+func TestOnlyDetailEndpointsLoadDirection(t *testing.T) {
+	isapi := &model.Camera{UUID: uuid.New(), Protocol: model.Protocol{Name: model.ProtocolISAPI}}
+
+	usecases := []struct {
+		name       string
+		call       func(*usecase, request.UserActor) error
+		wantDetail bool
+	}{
+		{"GetCamera", func(u *usecase, a request.UserActor) error {
+			_, err := u.GetCamera(context.Background(), a, uuid.NewString())
+			return err
+		}, true},
+		{"MoveTo", func(u *usecase, a request.UserActor) error {
+			_, err := u.MoveTo(context.Background(), a, uuid.NewString(), "LEFT")
+			return err // fails with "Direction Not Set" after the lookup
+		}, true},
+		{"GetContents", func(u *usecase, a request.UserActor) error {
+			_, err := u.GetContents(context.Background(), a, uuid.NewString(), request.SearchContent{Limit: 10})
+			return err
+		}, false},
+	}
+
+	for _, uc := range usecases {
+		for _, role := range []string{"admin", "operator"} {
+			t.Run(uc.name+"/"+role, func(t *testing.T) {
+				repo := &fakeAccessRepo{camera: isapi}
+				u := &usecase{repoCamera: repo, camera: &fakeCameraAdapter{}}
+
+				_ = uc.call(u, request.UserActor{UserID: "user-1", Role: role})
+
+				if len(repo.details) != 1 || repo.details[0] != uc.wantDetail {
+					t.Fatalf("detail lookups = %v, want [%v]", repo.details, uc.wantDetail)
+				}
+			})
+		}
 	}
 }

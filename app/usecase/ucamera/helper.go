@@ -26,18 +26,31 @@ func bypassesCameraAccess(role string) bool {
 	}
 }
 
+// findCamera loads a camera the actor may access, with its protocol and
+// credential: enough for every camera action. Use findCameraDetail when the
+// direction and pan-tilts are needed.
 func (u *usecase) findCamera(ctx context.Context, actor request.UserActor, operation string, cameraUUID string) (*model.Camera, error) {
+	return u.lookupCamera(ctx, actor, operation, cameraUUID, false)
+}
+
+// findCameraDetail is findCamera plus the direction and its pan-tilts.
+func (u *usecase) findCameraDetail(ctx context.Context, actor request.UserActor, operation string, cameraUUID string) (*model.Camera, error) {
+	return u.lookupCamera(ctx, actor, operation, cameraUUID, true)
+}
+
+func (u *usecase) lookupCamera(ctx context.Context, actor request.UserActor, operation string, cameraUUID string, detail bool) (*model.Camera, error) {
 	var camera *model.Camera
 	var err error
 
-	if bypassesCameraAccess(actor.Role) {
+	switch {
+	case bypassesCameraAccess(actor.Role) && detail:
+		camera, err = u.repoCamera.FindCameraDetailByUUID(ctx, cameraUUID)
+	case bypassesCameraAccess(actor.Role):
 		camera, err = u.repoCamera.FindCameraByUUID(ctx, cameraUUID)
-	} else {
-		camera, err = u.repoCamera.FindCameraAccessUser(
-			ctx,
-			cameraUUID,
-			actor.UserID,
-		)
+	case detail:
+		camera, err = u.repoCamera.FindCameraAccessUserDetail(ctx, cameraUUID, actor.UserID)
+	default:
+		camera, err = u.repoCamera.FindCameraAccessUser(ctx, cameraUUID, actor.UserID)
 	}
 
 	if err != nil {
