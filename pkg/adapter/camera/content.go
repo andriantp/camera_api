@@ -86,6 +86,13 @@ func (c *icamera) FindContent(ctx context.Context, target CameraTarget, req requ
 			return &content, nil
 		}
 
+		// Stop on an empty page: some firmware reports a TotalMatches larger
+		// than what it returns, which would otherwise loop forever on the
+		// same offset.
+		if len(data.Content.Matches) == 0 {
+			break
+		}
+
 		position += len(data.Content.Matches)
 		if position >= data.Content.TotalMatches {
 			break

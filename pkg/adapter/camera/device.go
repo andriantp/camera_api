@@ -45,6 +45,9 @@ func (c *icamera) GetCapability(ctx context.Context, target CameraTarget) (*came
 		}
 	}
 
+	// ISAPI needs a channel; fall back to the default when none is set.
+	c.setDefaults(&target)
+
 	switch target.Protocol {
 	case model.ProtocolONVIF:
 		capabilities, err := c.clientOnvif.GetCapabilities(ctx,
