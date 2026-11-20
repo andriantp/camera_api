@@ -37,6 +37,3 @@ func TestNewPostgres(t *testing.T) {
 		t.Fatal("gorm database is nil")
 	}
 }
-
-
-

@@ -42,7 +42,7 @@ func FailedResponse(message string, cause interface{}) Failed {
 	}
 }
 
-func PaginationResponse(message string,meta Meta,data interface{}) SuccessMeta {
+func PaginationResponse(message string, meta Meta, data interface{}) SuccessMeta {
 	return SuccessMeta{
 		Status:  true,
 		Message: message,
