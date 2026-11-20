@@ -117,33 +117,9 @@ func (r *repo) FindUserByUserUUIDForUpdate(ctx context.Context, userUUID string)
 }
 
 func (r *repo) FindUserSummaryByUserUUID(ctx context.Context, userUUID string) (*model.UserSummary, error) {
-	db := r.provider.Db(ctx)
 	var data model.UserSummary
 
-	result := db.
-		Table("users u").
-		Select(`
-			u.uuid,
-			u.username,
-			r.id AS role_id,
-			r.name AS role,
-			u.last_login_at AS last_login,
-			s.last_seen_at AS last_seen,
-			u.active
-		`).
-		Joins("JOIN roles r ON r.uuid = u.role_id").
-		Joins(`
-			LEFT JOIN LATERAL (
-				SELECT s.last_seen_at
-				FROM sessions s
-				WHERE s.user_id = u.uuid
-					AND s.logout_at IS NULL
-				ORDER BY s.last_seen_at DESC
-				LIMIT 1
-			) s ON true
-		`).
-		Where("u.uuid = ? AND u.deleted_at IS NULL", userUUID).
-		Scan(&data)
+	result := userSummaryQuery(r.provider.Db(ctx), userUUID).Scan(&data)
 
 	if result.Error != nil {
 		return nil, result.Error
@@ -152,7 +128,42 @@ func (r *repo) FindUserSummaryByUserUUID(ctx context.Context, userUUID string) (
 	if result.RowsAffected == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
+
 	return &data, nil
+}
+
+// userSummaryQuery builds the single-user profile query without executing it.
+func userSummaryQuery(db *gorm.DB, userUUID string) *gorm.DB {
+	return db.
+		Table("users u").
+		Select(`
+			u.uuid,
+			u.username,
+			r.id AS role_id,
+			r.name AS role,
+			u.last_login_at AS last_login,
+			last_session.last_seen_at AS last_seen,
+			u.active
+		`).
+		Joins("JOIN roles r ON r.uuid = u.role_id").
+		Joins(latestSessionJoin("u.uuid")).
+		Where("u.uuid = ? AND u.deleted_at IS NULL", userUUID)
+}
+
+// latestSessionJoin joins the user's most recent session as last_session.
+// last_seen means the last time the user was active, whether or not they
+// logged out since, and must mean the same in the list and the profile.
+// NULLs are skipped (like MAX) and the plain DESC order lets
+// idx_sessions_user_last_seen be read backwards.
+func latestSessionJoin(userUUIDColumn string) string {
+	return `
+		LEFT JOIN LATERAL (
+			SELECT s.last_seen_at
+			FROM sessions s
+			WHERE s.user_id = ` + userUUIDColumn + ` AND s.last_seen_at IS NOT NULL
+			ORDER BY s.last_seen_at DESC
+			LIMIT 1
+		) last_session ON true`
 }
 
 func (r *repo) FindUsers(ctx context.Context, actorRoleID, limit, offset int) ([]model.UserSummary, error) {
@@ -189,17 +200,8 @@ func usersQuery(db *gorm.DB, actorRoleID, limit, offset int) *gorm.DB {
 		`).
 		Joins("JOIN roles ON roles.uuid = users.role_id").
 		// Latest session per user via LATERAL instead of joining every session
-		// and grouping. Same result as MAX(last_seen_at) (NULLs skipped); the
-		// plain DESC order lets idx_sessions_user_last_seen be read backwards.
-		Joins(`
-			LEFT JOIN LATERAL (
-				SELECT s.last_seen_at
-				FROM sessions s
-				WHERE s.user_id = users.uuid AND s.last_seen_at IS NOT NULL
-				ORDER BY s.last_seen_at DESC
-				LIMIT 1
-			) last_session ON true
-		`).
+		// and grouping.
+		Joins(latestSessionJoin("users.uuid")).
 		Joins(`
 			LEFT JOIN LATERAL (
 				SELECT

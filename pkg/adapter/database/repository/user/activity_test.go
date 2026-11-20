@@ -83,29 +83,46 @@ func TestFindUserActivitiesOptionalTimeRange(t *testing.T) {
 	}
 }
 
-func TestFindUsersUsesLateralSessionLookup(t *testing.T) {
+func TestUserQueriesUseSameLastSeen(t *testing.T) {
 	db := newDryRunDB(t)
 
-	sql := db.ToSQL(func(tx *gorm.DB) *gorm.DB {
-		var out []model.UserSummary
-		return usersQuery(tx, 2, 20, 0).Find(&out)
-	})
+	queries := map[string]string{
+		"list (FindUsers)": db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+			var out []model.UserSummary
+			return usersQuery(tx, 2, 20, 0).Find(&out)
+		}),
+		"profile (FindUserSummaryByUserUUID)": db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+			var out model.UserSummary
+			return userSummaryQuery(tx, "user-1").Find(&out)
+		}),
+	}
+
+	for name, sql := range queries {
+		t.Run(name, func(t *testing.T) {
+			checkLastSeenSQL(t, sql)
+		})
+	}
+}
+
+func checkLastSeenSQL(t *testing.T, sql string) {
+	t.Helper()
 
 	for _, want := range []string{
 		"LEFT JOIN LATERAL",
 		"FROM sessions s",
 		"s.last_seen_at IS NOT NULL",
 		"ORDER BY s.last_seen_at DESC",
-		"roles.id >=",
+		"last_session.last_seen_at AS last_seen",
 	} {
 		if !strings.Contains(sql, want) {
 			t.Errorf("missing %q in SQL:\n%s", want, sql)
 		}
 	}
 
-	// Joining every session and grouping is what this query replaced; the
-	// NULLS LAST variant can't use idx_sessions_user_last_seen.
-	for _, banned := range []string{"GROUP BY", "LEFT JOIN sessions ON", "NULLS LAST"} {
+	// Joining every session and grouping is what the list query replaced;
+	// NULLS LAST can't use idx_sessions_user_last_seen; filtering on
+	// logout_at made the profile disagree with the list.
+	for _, banned := range []string{"GROUP BY", "LEFT JOIN sessions ON", "NULLS LAST", "logout_at"} {
 		if strings.Contains(sql, banned) {
 			t.Errorf("unexpected %q in SQL:\n%s", banned, sql)
 		}
