@@ -29,11 +29,9 @@ func (u *usecase) GetCamerasByProtocol(ctx context.Context, actor request.UserAc
 	var cameras []model.CameraSummary
 	var err error
 
-	switch actor.Role {
-	case "super_admin":
+	if bypassesCameraAccess(actor.Role) {
 		cameras, err = u.repoCamera.FindCamerasByProtocol(ctx, protocolUUID)
-
-	default:
+	} else {
 		cameras, err = u.repoCamera.FindCamerasByProtocolByUser(ctx, protocolUUID, actor.UserID)
 	}
 
@@ -67,11 +65,9 @@ func (u *usecase) GetCameras(ctx context.Context, actor request.UserActor) (*res
 	var cameras []model.Camera
 	var err error
 
-	switch actor.Role {
-	case "super_admin":
+	if bypassesCameraAccess(actor.Role) {
 		cameras, err = u.repoCamera.FindCameras(ctx)
-
-	default:
+	} else {
 		cameras, err = u.repoCamera.FindCamerasByUser(ctx, actor.UserID)
 	}
 
@@ -333,7 +329,9 @@ func (u *usecase) CreateCamera(ctx context.Context, actor request.UserActor, req
 			return err
 		}
 
-		if actor.Role != "super_admin" {
+		// Roles restricted by camera_access need a grant to see the camera
+		// they just created.
+		if !bypassesCameraAccess(actor.Role) {
 			if err := u.repoCamera.CreateCameraAccess(
 				ctxWithTx,
 				&model.CameraAccess{

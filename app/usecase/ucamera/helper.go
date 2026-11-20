@@ -14,15 +14,25 @@ import (
 	"gorm.io/gorm"
 )
 
+// bypassesCameraAccess reports whether a role sees every camera. super_admin
+// and admin are not restricted by camera_access; operator and user only see
+// cameras granted to them.
+func bypassesCameraAccess(role string) bool {
+	switch role {
+	case "super_admin", "admin":
+		return true
+	default:
+		return false
+	}
+}
+
 func (u *usecase) findCamera(ctx context.Context, actor request.UserActor, operation string, cameraUUID string) (*model.Camera, error) {
 	var camera *model.Camera
 	var err error
 
-	switch actor.Role {
-	case "super_admin":
+	if bypassesCameraAccess(actor.Role) {
 		camera, err = u.repoCamera.FindCameraByUUID(ctx, cameraUUID)
-
-	default:
+	} else {
 		camera, err = u.repoCamera.FindCameraAccessUser(
 			ctx,
 			cameraUUID,
