@@ -7,10 +7,10 @@ import (
 type Session struct {
 	ID         int64      `gorm:"primaryKey"`
 	UUID       string     `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex;not null"`
-	UserID     string     `gorm:"column:user_id;type:uuid;not null;index"`
+	UserID     string     `gorm:"column:user_id;type:uuid;not null;index;index:idx_sessions_user_last_seen,priority:1"`
 	LoginAt    time.Time  `gorm:"type:timestamp(0)"`
 	LogoutAt   *time.Time `gorm:"type:timestamp(0)"`
-	LastSeenAt time.Time  `gorm:"type:timestamp(0)"`
+	LastSeenAt time.Time  `gorm:"type:timestamp(0);index:idx_sessions_user_last_seen,priority:2"`
 	IPAddress  string     `gorm:"type:inet"`
 	UserAgent  string     `gorm:"type:text"`
 	CreatedAt  time.Time  `gorm:"type:timestamp(0)"`

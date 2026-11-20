@@ -156,11 +156,23 @@ func (r *repo) FindUserSummaryByUserUUID(ctx context.Context, userUUID string) (
 }
 
 func (r *repo) FindUsers(ctx context.Context, actorRoleID, limit, offset int) ([]model.UserSummary, error) {
-	db := r.provider.Db(ctx)
-
 	var users []model.UserSummary
 
-	err := db.
+	err := usersQuery(r.provider.Db(ctx), actorRoleID, limit, offset).
+		Scan(&users).
+		Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+// usersQuery builds the user listing query without executing it, so the
+// generated SQL can be tested without a database.
+func usersQuery(db *gorm.DB, actorRoleID, limit, offset int) *gorm.DB {
+	return db.
 		Table("users").
 		Select(`
 			users.uuid,
@@ -168,7 +180,7 @@ func (r *repo) FindUsers(ctx context.Context, actorRoleID, limit, offset int) ([
 			roles.id AS role_id,
 			roles.name AS role,
 			users.last_login_at AS last_login,
-			MAX(sessions.last_seen_at) AS last_seen,
+			last_session.last_seen_at AS last_seen,
 			users.active,
 			latest_activity.created_at AS last_activity,
 			latest_activity.activity AS last_activity_type,
@@ -176,7 +188,18 @@ func (r *repo) FindUsers(ctx context.Context, actorRoleID, limit, offset int) ([
 			COUNT(*) OVER() AS total
 		`).
 		Joins("JOIN roles ON roles.uuid = users.role_id").
-		Joins("LEFT JOIN sessions ON sessions.user_id = users.uuid").
+		// Latest session per user via LATERAL instead of joining every session
+		// and grouping. Same result as MAX(last_seen_at) (NULLs skipped); the
+		// plain DESC order lets idx_sessions_user_last_seen be read backwards.
+		Joins(`
+			LEFT JOIN LATERAL (
+				SELECT s.last_seen_at
+				FROM sessions s
+				WHERE s.user_id = users.uuid AND s.last_seen_at IS NOT NULL
+				ORDER BY s.last_seen_at DESC
+				LIMIT 1
+			) last_session ON true
+		`).
 		Joins(`
 			LEFT JOIN LATERAL (
 				SELECT
@@ -191,30 +214,10 @@ func (r *repo) FindUsers(ctx context.Context, actorRoleID, limit, offset int) ([
 		`).
 		Where("users.deleted_at IS NULL").
 		Where("roles.id >= ?", actorRoleID).
-		Group(`
-			users.id,
-			users.uuid,
-			users.username,
-			roles.id,
-			roles.name,
-			users.last_login_at,
-			users.active,
-			latest_activity.created_at,
-			latest_activity.activity,
-			latest_activity.message
-		`).
 		Order("roles.id ASC").
 		Order("users.id ASC").
 		Limit(limit).
-		Offset(offset).
-		Scan(&users).
-		Error
-
-	if err != nil {
-		return nil, err
-	}
-
-	return users, nil
+		Offset(offset)
 }
 
 func (r *repo) UpdateUsername(ctx context.Context, userUUID, username string) error {

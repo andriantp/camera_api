@@ -82,3 +82,32 @@ func TestFindUserActivitiesOptionalTimeRange(t *testing.T) {
 		})
 	}
 }
+
+func TestFindUsersUsesLateralSessionLookup(t *testing.T) {
+	db := newDryRunDB(t)
+
+	sql := db.ToSQL(func(tx *gorm.DB) *gorm.DB {
+		var out []model.UserSummary
+		return usersQuery(tx, 2, 20, 0).Find(&out)
+	})
+
+	for _, want := range []string{
+		"LEFT JOIN LATERAL",
+		"FROM sessions s",
+		"s.last_seen_at IS NOT NULL",
+		"ORDER BY s.last_seen_at DESC",
+		"roles.id >=",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("missing %q in SQL:\n%s", want, sql)
+		}
+	}
+
+	// Joining every session and grouping is what this query replaced; the
+	// NULLS LAST variant can't use idx_sessions_user_last_seen.
+	for _, banned := range []string{"GROUP BY", "LEFT JOIN sessions ON", "NULLS LAST"} {
+		if strings.Contains(sql, banned) {
+			t.Errorf("unexpected %q in SQL:\n%s", banned, sql)
+		}
+	}
+}

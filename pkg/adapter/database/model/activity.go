@@ -9,7 +9,7 @@ import (
 type UserActivity struct {
 	ID           int64     `gorm:"primaryKey"`
 	UUID         uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();uniqueIndex;not null"`
-	ActorUserID  string    `gorm:"column:actor_user_id;type:uuid;not null;index"`
+	ActorUserID  string    `gorm:"column:actor_user_id;type:uuid;not null;index;index:idx_user_activities_actor_created,priority:1"`
 	TargetUserID *string   `gorm:"column:target_user_id;type:uuid;index"`
 	CameraID     *string   `gorm:"column:camera_id;type:uuid;index"`
 	SessionID    *string   `gorm:"column:session_id;type:uuid;index"`
@@ -17,7 +17,7 @@ type UserActivity struct {
 	UserAgent    string    `gorm:"type:text"`
 	Activity     string    `gorm:"type:varchar(100);not null;index"`
 	Message      *string   `gorm:"type:text"`
-	CreatedAt    time.Time `gorm:"type:timestamp(0)"`
+	CreatedAt    time.Time `gorm:"type:timestamp(0);index:idx_user_activities_actor_created,priority:2"`
 
 	ActorUser  User     `gorm:"foreignKey:ActorUserID;references:UUID"`
 	TargetUser *User    `gorm:"foreignKey:TargetUserID;references:UUID"`
