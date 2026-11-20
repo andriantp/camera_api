@@ -12,7 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-func TestRevokeCameraAccessRejectsInvalidUUID(t *testing.T) {
+func TestCameraAccessRejectsInvalidUUID(t *testing.T) {
 	tests := []struct {
 		name               string
 		cameraUUID, userID string
@@ -29,12 +29,17 @@ func TestRevokeCameraAccessRejectsInvalidUUID(t *testing.T) {
 			c.SetParamNames("cameraUUID", "userUUID")
 			c.SetParamValues(tt.cameraUUID, tt.userID)
 
-			// ucaseCamera is nil: the handler must reject before calling it.
-			err := (&handler{}).RevokeCameraAccess(c)
+			// ucaseCamera is nil: the handlers must reject before calling it.
+			for name, call := range map[string]func(echo.Context) error{
+				"PUT":    (&handler{}).GrantCameraAccess,
+				"DELETE": (&handler{}).RevokeCameraAccess,
+			} {
+				err := call(c)
 
-			var apiErr response.APIError
-			if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest || apiErr.Message != tt.wantMessage {
-				t.Fatalf("err = %v, want 400 %q", err, tt.wantMessage)
+				var apiErr response.APIError
+				if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest || apiErr.Message != tt.wantMessage {
+					t.Fatalf("%s: err = %v, want 400 %q", name, err, tt.wantMessage)
+				}
 			}
 		})
 	}

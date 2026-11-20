@@ -15,6 +15,11 @@ import (
 )
 
 func revoke(u *usecase, cameraUUID, userUUID string) error {
+	_, err := revokeChanged(u, cameraUUID, userUUID)
+	return err
+}
+
+func revokeChanged(u *usecase, cameraUUID, userUUID string) (bool, error) {
 	return u.RevokeCameraAccess(
 		context.Background(),
 		request.UserActor{UserID: "admin-1", SessionID: "session-1", Role: "admin"},
@@ -55,12 +60,6 @@ func TestRevokeCameraAccessErrors(t *testing.T) {
 			wantMessage: "Camera access not found",
 		},
 		{
-			name:        "already revoked",
-			cams:        &fakeAssignCameraRepo{access: &model.CameraAccess{ID: 9, Active: false}},
-			wantStatus:  http.StatusConflict,
-			wantMessage: "Camera access already revoked",
-		},
-		{
 			name:        "database error",
 			cams:        &fakeAssignCameraRepo{accessErr: errors.New("connection refused")},
 			wantStatus:  http.StatusInternalServerError,
@@ -87,8 +86,9 @@ func TestRevokeCameraAccessDeactivatesGrant(t *testing.T) {
 	users := &fakeAssignUserRepo{}
 	u := newRevoke(cams, users)
 
-	if err := revoke(u, uuid.NewString(), "user-2"); err != nil {
-		t.Fatalf("RevokeCameraAccess: %v", err)
+	changed, err := revokeChanged(u, uuid.NewString(), "user-2")
+	if err != nil || !changed {
+		t.Fatalf("RevokeCameraAccess: changed=%v err=%v, want true and nil", changed, err)
 	}
 
 	if len(cams.deactivated) != 1 || cams.deactivated[0] != 42 || cams.created != 0 {
@@ -126,5 +126,24 @@ func TestRevokeCameraAccessForDeletedUser(t *testing.T) {
 
 	if msg := users.activities[0].Message; msg == nil || !strings.HasSuffix(*msg, "for user user-2") {
 		t.Errorf("message = %v, want it to fall back to the user UUID", msg)
+	}
+}
+
+func TestRevokeCameraAccessIsIdempotent(t *testing.T) {
+	cams := &fakeAssignCameraRepo{access: &model.CameraAccess{ID: 9, Active: false}}
+	users := &fakeAssignUserRepo{}
+	u := newRevoke(cams, users)
+
+	changed, err := revokeChanged(u, uuid.NewString(), "user-2")
+	if err != nil {
+		t.Fatalf("RevokeCameraAccess: %v", err)
+	}
+
+	if changed {
+		t.Error("changed = true, want false for an already revoked access")
+	}
+
+	if len(cams.deactivated) != 0 || len(users.activities) != 0 {
+		t.Fatal("a no-op revoke must not write anything")
 	}
 }

@@ -105,8 +105,10 @@ func NewHandler(
 	// =========================================================
 	group.GET("", handler.GetCameras)
 	group.POST("", handler.CreateCamera, middle.RoleMiddleware("super_admin", "admin"), createLimiter)
-	group.POST("/assign", handler.AssignCamera, middle.RoleMiddleware("super_admin", "admin"), updateLimiter)
+	group.PUT("/:cameraUUID/access/:userUUID", handler.GrantCameraAccess, middle.RoleMiddleware("super_admin", "admin"), updateLimiter)
 	group.DELETE("/:cameraUUID/access/:userUUID", handler.RevokeCameraAccess, middle.RoleMiddleware("super_admin", "admin"), updateLimiter)
+	// Deprecated: kept for existing clients; use PUT /:cameraUUID/access/:userUUID.
+	group.POST("/assign", handler.AssignCamera, middle.RoleMiddleware("super_admin", "admin"), updateLimiter)
 	group.GET("/protocol/:protocolUUID", handler.GetCamerasByProtocol)
 	// Camera detail
 	group.GET("/:cameraUUID", handler.GetCamera)

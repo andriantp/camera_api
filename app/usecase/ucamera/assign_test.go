@@ -104,10 +104,16 @@ func newAssign(cams *fakeAssignCameraRepo, users *fakeAssignUserRepo) (*usecase,
 }
 
 func assign(u *usecase, req request.AssignCameraRequest) error {
+	_, err := assignChanged(u, req)
+	return err
+}
+
+func assignChanged(u *usecase, req request.AssignCameraRequest) (bool, error) {
 	return u.AssignCamera(
 		context.Background(),
 		request.UserActor{UserID: "admin-1", SessionID: "session-1", Role: "admin"},
-		req,
+		req.CameraUUID,
+		req.UserUUID,
 	)
 }
 
@@ -148,20 +154,6 @@ func TestAssignCameraValidation(t *testing.T) {
 			wantMessage: "Camera access can only be assigned to operator or user",
 		},
 		{
-			name:        "already assigned",
-			cams:        &fakeAssignCameraRepo{access: &model.CameraAccess{ID: 7, Active: true}},
-			users:       &fakeAssignUserRepo{},
-			wantStatus:  http.StatusConflict,
-			wantMessage: "Camera already assigned to user",
-		},
-		{
-			name:        "concurrent duplicate insert",
-			cams:        &fakeAssignCameraRepo{createErr: gorm.ErrDuplicatedKey},
-			users:       &fakeAssignUserRepo{},
-			wantStatus:  http.StatusConflict,
-			wantMessage: "Camera already assigned to user",
-		},
-		{
 			name:        "database error",
 			cams:        &fakeAssignCameraRepo{cameraErr: errors.New("connection refused")},
 			users:       &fakeAssignUserRepo{},
@@ -188,8 +180,9 @@ func TestAssignCameraCreatesGrantWithAudit(t *testing.T) {
 	users := &fakeAssignUserRepo{}
 	u, req := newAssign(cams, users)
 
-	if err := assign(u, req); err != nil {
-		t.Fatalf("AssignCamera: %v", err)
+	changed, err := assignChanged(u, req)
+	if err != nil || !changed {
+		t.Fatalf("AssignCamera: changed=%v err=%v, want true and nil", changed, err)
 	}
 
 	if cams.created != 1 {
@@ -227,5 +220,35 @@ func TestAssignCameraReactivatesRevokedGrant(t *testing.T) {
 
 	if msg := users.activities[0].Message; msg == nil || !strings.HasPrefix(*msg, "Reactivated") {
 		t.Errorf("message = %v, want it to start with Reactivated", msg)
+	}
+}
+
+func TestAssignCameraIsIdempotent(t *testing.T) {
+	tests := []struct {
+		name string
+		cams *fakeAssignCameraRepo
+	}{
+		{name: "already active", cams: &fakeAssignCameraRepo{access: &model.CameraAccess{ID: 7, Active: true}}},
+		{name: "concurrent duplicate insert", cams: &fakeAssignCameraRepo{createErr: gorm.ErrDuplicatedKey}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			users := &fakeAssignUserRepo{}
+			u, req := newAssign(tt.cams, users)
+
+			changed, err := assignChanged(u, req)
+			if err != nil {
+				t.Fatalf("AssignCamera: %v", err)
+			}
+
+			if changed {
+				t.Error("changed = true, want false for an access that already exists")
+			}
+
+			if len(tt.cams.activated) != 0 || len(users.activities) != 0 {
+				t.Fatal("a no-op grant must not write anything")
+			}
+		})
 	}
 }

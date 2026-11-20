@@ -19,8 +19,11 @@ import (
 type Camera interface {
 	GetCamerasByProtocol(ctx context.Context, actor request.UserActor, protocolUUID string) (*response.CameraList, error)
 	GetCameras(ctx context.Context, actor request.UserActor) (*response.CameraList, error)
-	AssignCamera(ctx context.Context, actor request.UserActor, req request.AssignCameraRequest) error
-	RevokeCameraAccess(ctx context.Context, actor request.UserActor, cameraUUID, userUUID string) error
+	// AssignCamera and RevokeCameraAccess are idempotent: the bool reports
+	// whether anything changed (false when the access was already in the
+	// requested state).
+	AssignCamera(ctx context.Context, actor request.UserActor, cameraUUID, userUUID string) (bool, error)
+	RevokeCameraAccess(ctx context.Context, actor request.UserActor, cameraUUID, userUUID string) (bool, error)
 	GetCamera(ctx context.Context, actor request.UserActor, cameraUUID string) (*response.CameraDetail, error)
 	GetCameraWithCredential(ctx context.Context, cameraUUID string) (*response.CameraDetail, error)
 	CreateCamera(ctx context.Context, actor request.UserActor, req request.CreateCamera) (*string, error)
@@ -98,11 +101,11 @@ func (u *usecase) GetCameras(ctx context.Context, actor request.UserActor) (*res
 	}, nil
 }
 
-func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req request.AssignCameraRequest) error {
+func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, cameraUUID, userUUID string) (bool, error) {
 	err := u.repoCamera.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
 		now := time.Now().UTC()
 
-		cam, err := u.repoCamera.FindCameraByUUID(ctxWithTx, req.CameraUUID)
+		cam, err := u.repoCamera.FindCameraByUUID(ctxWithTx, cameraUUID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return response.APIError{
 				StatusCode: http.StatusNotFound,
@@ -113,7 +116,7 @@ func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req
 			return err
 		}
 
-		target, err := u.repoUser.FindUserByUserUUID(ctxWithTx, req.UserUUID)
+		target, err := u.repoUser.FindUserByUserUUID(ctxWithTx, userUUID)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return response.APIError{
 				StatusCode: http.StatusNotFound,
@@ -135,13 +138,10 @@ func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req
 
 		action := "Assigned"
 
-		access, err := u.repoCamera.FindCameraAccess(ctxWithTx, req.CameraUUID, req.UserUUID)
+		access, err := u.repoCamera.FindCameraAccess(ctxWithTx, cameraUUID, userUUID)
 		switch {
 		case err == nil && access.Active:
-			return response.APIError{
-				StatusCode: http.StatusConflict,
-				Message:    "Camera already assigned to user",
-			}
+			return errNoChange
 
 		case err == nil:
 			// A revoked grant exists: re-enable it instead of adding a row.
@@ -155,18 +155,15 @@ func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req
 			err := u.repoCamera.CreateCameraAccess(
 				ctxWithTx,
 				&model.CameraAccess{
-					CameraID:  req.CameraUUID,
-					UserID:    req.UserUUID,
+					CameraID:  cameraUUID,
+					UserID:    userUUID,
 					CreatedBy: actor.UserID,
 					Active:    true,
 				},
 			)
 			// A concurrent request created the same grant first.
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
-				return response.APIError{
-					StatusCode: http.StatusConflict,
-					Message:    "Camera already assigned to user",
-				}
+				return errNoChange
 			}
 			if err != nil {
 				return err
@@ -190,15 +187,15 @@ func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req
 			"%s access to camera %s (%s) for user %s",
 			action,
 			cam.SN,
-			req.CameraUUID,
+			cameraUUID,
 			target.UserName,
 		)
 
 		activity := model.UserActivity{
 			ActorUserID:  actor.UserID,
-			TargetUserID: &req.UserUUID,
+			TargetUserID: &userUUID,
 			SessionID:    &actor.SessionID,
-			CameraID:     &req.CameraUUID,
+			CameraID:     &cameraUUID,
 			IPAddress:    actor.IPAddress,
 			UserAgent:    actor.UserAgent,
 			Activity:     "ASSIGNED_CAMERA",
@@ -208,17 +205,21 @@ func (u *usecase) AssignCamera(ctx context.Context, actor request.UserActor, req
 
 		return u.repoUser.CreateActivity(ctxWithTx, &activity)
 	})
-	if err != nil {
-		return transactionError("AssignCamera", err, "Camera not found")
+	if errors.Is(err, errNoChange) {
+		return false, nil
 	}
 
-	return nil
+	if err != nil {
+		return false, transactionError("AssignCamera", err, "Camera not found")
+	}
+
+	return true, nil
 }
 
 // RevokeCameraAccess deactivates a user's grant to a camera. The camera
 // disappears from the user's lists and can no longer be opened; assigning it
 // again re-enables the same grant.
-func (u *usecase) RevokeCameraAccess(ctx context.Context, actor request.UserActor, cameraUUID, userUUID string) error {
+func (u *usecase) RevokeCameraAccess(ctx context.Context, actor request.UserActor, cameraUUID, userUUID string) (bool, error) {
 	err := u.repoCamera.DoTransaction(ctx, func(ctxWithTx context.Context, _ *gorm.DB) error {
 		now := time.Now().UTC()
 
@@ -245,10 +246,7 @@ func (u *usecase) RevokeCameraAccess(ctx context.Context, actor request.UserActo
 		}
 
 		if !access.Active {
-			return response.APIError{
-				StatusCode: http.StatusConflict,
-				Message:    "Camera access already revoked",
-			}
+			return errNoChange
 		}
 
 		if err := u.repoCamera.DeactivateCameraAccess(ctxWithTx, access.ID); err != nil {
@@ -294,11 +292,15 @@ func (u *usecase) RevokeCameraAccess(ctx context.Context, actor request.UserActo
 
 		return u.repoUser.CreateActivity(ctxWithTx, &activity)
 	})
-	if err != nil {
-		return transactionError("RevokeCameraAccess", err, "Camera not found")
+	if errors.Is(err, errNoChange) {
+		return false, nil
 	}
 
-	return nil
+	if err != nil {
+		return false, transactionError("RevokeCameraAccess", err, "Camera not found")
+	}
+
+	return true, nil
 }
 
 func (u *usecase) GetCamera(ctx context.Context, actor request.UserActor, cameraUUID string) (*response.CameraDetail, error) {

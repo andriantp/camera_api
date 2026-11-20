@@ -145,6 +145,10 @@ func checkMoveDuration(duration time.Duration) error {
 	return nil
 }
 
+// errNoChange aborts a transaction when the requested state already holds
+// (e.g. access already granted). Callers report it as a successful no-op.
+var errNoChange = errors.New("no change")
+
 // transactionError maps an error returned from a transaction to an API error:
 // APIErrors raised inside the transaction (e.g. 404 from findCamera) pass
 // through unchanged, gorm.ErrRecordNotFound becomes 404 with notFoundMessage,
