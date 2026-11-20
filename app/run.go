@@ -99,37 +99,7 @@ func (a *appStruct) Run(ctx context.Context) error {
 	if a.setting.Build.ENV != "production" {
 		e.Use(middleware.CORS())
 	} else if a.setting.Server.Cors {
-		e.Use(middleware.CORSWithConfig(
-			middleware.CORSConfig{
-				AllowOriginFunc: func(origin string) (bool, error) {
-					if origin == "" {
-						return true, nil
-					}
-
-					for _, allowed := range a.setting.Server.AllowOrigins {
-						if origin == allowed {
-							return true, nil
-						}
-					}
-
-					return false, nil
-				},
-				AllowMethods: []string{
-					http.MethodGet,
-					http.MethodPost,
-					http.MethodPut,
-					http.MethodDelete,
-					http.MethodOptions,
-				},
-				AllowHeaders: []string{
-					echo.HeaderOrigin,
-					echo.HeaderContentType,
-					echo.HeaderAccept,
-					echo.HeaderAuthorization,
-				},
-				AllowCredentials: true,
-			},
-		))
+		e.Use(middleware.CORSWithConfig(productionCORS(a.setting.Server.AllowOrigins)))
 	}
 
 	// LOGGER
